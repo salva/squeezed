@@ -62,7 +62,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="Ws2_32.lib id3lib.lib zlib.lib"
+				AdditionalDependencies="Ws2_32.lib"
 				LinkIncremental="2"
 				AdditionalLibraryDirectories="..\bin\win32"
 				IgnoreDefaultLibraryNames="MSVCP90D.dll"
@@ -142,10 +142,10 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="Ws2_32.lib id3lib.lib zlib.lib"
+				AdditionalDependencies="Ws2_32.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="..\bin\win32"
-				GenerateDebugInformation="true"
+				GenerateDebugInformation="false"
 				SubSystem="1"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"

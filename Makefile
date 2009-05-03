@@ -12,7 +12,7 @@ HDRS =$(wildcard *.hpp)
 HDRS+=$(wildcard *.h)
 
 
-BIN_OUT=SqueezeD
+BIN_OUT=squeezed
 
 
 #------------ cross-compilation from 64 to 32 bit
@@ -21,22 +21,28 @@ BIN_OUT=SqueezeD
 #---------- OS specific settings
 HOST=$(shell uname)
 
+ifeq ($(HOST),Linux)
+	PLATFORM=$(shell uname -m)
+	HOST=linux-$(PLATFORM)
+endif
+
 #	this requires the following package under ubuntu
 # 	libc6-dev-i386 g++-multilib
 ifeq ($(TARGET),32bit)
 	CFLAGS=-m32 
 	#-I/usr/include/i486-linux-gnu/ 
-	LFLAGS=-m32 -lstdc++
-	HOST=linux32
+	LDFLAGS=-m32 -lstdc++
+	HOST=linux-x86
 endif
 
 
+STRIP=strip
 CC=g++
 OBJDIR= obj/$(HOST)
 BINDIR = bin/$(HOST)
 
 CFLAGS+=-Os -g
-LFLAGS+=-Os -lpthread
+LDFLAGS+=-Os -lpthread
 OBJ_EXT=o
 
 ifeq ($(HOST),Cygwin)
@@ -73,8 +79,8 @@ _32bit:
 squeezed: paths $(OBJS)
 #	echo $(HDRS)
 #	ar rs $(BINDIR)/libNM.lib $(OBJS_NM)
-	$(CC) $(LFLAGS) -o $(BINDIR)/$(BIN_OUT) $(OBJS) 
-	strip $(BINDIR)/$(BIN_OUT)
+	$(CC) $(LDFLAGS) -o $(BINDIR)/$(BIN_OUT) $(OBJS) 
+	$(STRIP) $(BINDIR)/$(BIN_OUT)
 
 clean:
 	-rm -r $(OBJDIR)/*.$(OBJ_EXT)

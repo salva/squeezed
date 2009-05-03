@@ -34,6 +34,7 @@
 	//#define NOMINMAX
 	#include <winsock2.h>
 	//#include <Ws2tcpip.h>
+	#define MSG_NOSIGNAL 0
 #else
 	typedef int SOCKET;
 #endif
