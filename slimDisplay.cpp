@@ -186,10 +186,12 @@ void slimDisplay::draw(char transition)
 
 	netBuffer buf(packet);
 	buf.write( (uint16_t)0 );	//offset, if ~640 for squeezebox transporter..
-	buf.write( transition );	//transition ('c'=constant,'R'=right,'L'=left,'U','D')
+	buf.write( (uint8_t)transition );	//transition ('c'=constant,'R'=right,'L'=left,'U','D')
 	buf.write( param );			//no idea what this is..
+	assert( buf.idx == 4);
 
 	//convert uint8 to binary data:
+	//char *screen = buf.data + buf.idx;
 	for(int x=0; x< screenWidth; x++)
 	{
 		for(int y=0; y< screenHeight; y+=8)
@@ -436,11 +438,11 @@ void slimSearchMenu::draw(void)
 		{
 			dbQuery *result = &query.back();
 			dbField field   = result->getField();
-			sprintf(title, "%s `%s*' (%zu matches)", dbFieldStr[field], match.c_str(), result->uCount(resultCursor) );
+			sprintf(title, "%s `%s*' (%lli matches)", dbFieldStr[field], match.c_str(), (LLU)result->uCount(resultCursor) );
 			display->gotoxy(0,0);
 			display->print( title );
 
-			sprintf(title, "%i of %zu", resultCursor+1, result->uSize() );
+			sprintf(title, "%i of %llu", resultCursor+1, (LLU)result->uSize() );
 			display->gotoxy( 320 - 8*strlen(title), 0 );
 			display->print( title );
 
@@ -469,12 +471,15 @@ void slimBrowseMenu::draw(void)
 	display->gotoxy(0,0);
 	display->print( title );
 
-	sprintf(title,"%i of %zu", itemsPos, items.size() );
+	sprintf(title,"%i of %llu", itemsPos+1, (LLU)items.size() );
 	display->gotoxy( 320-8*strlen(title) , 0);
 	display->print( title );
 
 	display->gotoxy(20, 8);
-	display->print( items[itemsPos].c_str() );
+	if( items.size() > 0)
+		display->print( items[itemsPos].c_str() );
+	else
+		display->print( "<empty>" );
 	display->draw();
 }
 
@@ -484,7 +489,11 @@ bool slimBrowseMenu::command(commands_e cmd)
 {
 	bool handled = true;
 	int newPos;
-	string url = path::join(fullPath(), items[itemsPos]);
+	string url;
+	if( items.size() > 0)
+		url = path::join(fullPath(), items[itemsPos]);
+	else
+		url = fullPath();
 
 	switch(cmd)
 	{

@@ -31,11 +31,11 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
-#include "slimIPC.hpp"
+#include "TCPserver.hpp"	//needs to be first, to include winsock.h before windows.h
 
+#include "slimIPC.hpp"
 #include "util.hpp"
 
-#include "TCPserver.hpp"
 #include "fileInfo.hpp"
 #include "debug.h"
 

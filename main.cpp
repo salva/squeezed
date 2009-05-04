@@ -50,7 +50,7 @@ void testDB(void)
 
 	musicDB db( dbPath.c_str() );
 	db.scan( dbFile.c_str() );
-	printf("scanning: found %zu items\n", db.size() );
+	printf("scanning: found %llu items\n", (LLU)(db.size()) );
 
 	db.index();
 
@@ -59,7 +59,7 @@ void testDB(void)
 	dbField field = DB_TITLE;
 	dbQuery query( &db, field,  match);
 
-	printf("found %zu %s starting with %s\n",query.size(), dbFieldStr[field], match);
+	printf("found %llu %s starting with %s\n", (LLU)query.size(), dbFieldStr[field], match);
 }
 
 
@@ -67,27 +67,28 @@ void testShout(void)
 {
 	//load configuration:
 	configParser config(configFile);
-
 	string dbPath = config.getset("musicDB", "path", "." );	//path to music files
 	string dbFile = config.getset("musicDB", "dbFile", "SqueezeD.db");
 	int shoutPort	= config.getset("shout", "port", 9000 );
 	int shoutConn	= config.getset("shout", "maxConnections", 10 );
 	int slimPort	= config.getset("slim",	 "port", 3483);
-
 	config.write(configFile);
 
-	//initialize music databse:
+	// Resolve home directory ('~'), if required.
+	dbPath = path::normalize(dbPath);	
+
+	// Initialize music databse:
 	musicDB db( dbPath.c_str() );
 	db.scan( dbFile.c_str() );
-	printf("scanning: found %zu items\n", db.size() );
+	printf("scanning: found %llu items\n", (LLU)db.size() );
 	db.index();
 
-	//initialize servers:
+	// Initialize servers
 	slimIPC			ipc(&db, &config);
 	TCPserverShout	shoutServer( &ipc, shoutPort, shoutConn);
 	TCPserverSlim	slimServer( &ipc, slimPort);
 
-	//run only the shoutcast server:
+	// Run only the shoutcast server
 	shoutServer.runNonBlock();
 }
 
@@ -116,7 +117,8 @@ void startThreads()
 	// Write back the default values, in case some are missing:
 	config.write(configFile);
 
-	// initialize the database
+	// Initialize the database
+	dbPath = path::normalize(dbPath);		// Resolve home directory ('~'), if required.
 	musicDB db( dbPath.c_str() );
 
 	// only scan if index is missing
@@ -125,7 +127,7 @@ void startThreads()
 	else
 		db.load(dbFile.c_str() , dbIdx.c_str() );
 	db.index();
-	db_printf(1,"found %zu files\n", db.size() );
+	db_printf(1,"found %llu files\n", (LLU)db.size() );
 
 	//Both shout- and slim-server need to share some info.
 	//	the IPC block will provide the mutexes for safe multi-threading

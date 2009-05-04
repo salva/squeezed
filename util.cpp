@@ -79,7 +79,7 @@ namespace path
 	}
 
 	//put url/http escapes codes in to fname
-	std::string escape(const std::string fname)
+	std::string escape(const std::string& fname)
 	{
 		std::ostringstream out;
 		int n = fname.size();
@@ -102,7 +102,7 @@ namespace path
 
 
 	// Replace url-escape codes by their actual ascii characters
-	std::string unescape(const std::string fname)
+	std::string unescape(const std::string& fname)
 	{
 		std::string out;
 		int n = fname.size();
@@ -120,7 +120,7 @@ namespace path
 	}
 
 
-	std::string normalize(const std::string fname)
+	std::string normalize(std::string fname)
 	{
 		//std::string out;
 		/*size_t n = fname.size();
@@ -137,28 +137,49 @@ namespace path
 
 		//normalize pathname, to prevent tricks like "..\..\.."
 		// (also converts '/' to '\', removes trailing backslashes
+
+        if( fname.size() < 1 )
+            return std::string("");
+#if !defined(WIN32)
+        // Parse home-dir, since opendir() doesn't seem to know about that.
+        if( fname[0] == '~')
+        {
+            std::string home = getenv("HOME");
+            std::string fnameRel = fname.substr(1);
+            fname = path::join(home, fnameRel  );
+            db_printf(2,"modified home dir to: %s\n", fname.c_str() );
+        }
+#endif
+
 #if defined(WIN32) //&& !defined(__CYGWIN__)
 		int reqLen = GetFullPathNameA( fname.c_str(), 0, NULL, NULL);	//request required size
 		char *tmp = new char[ reqLen ];
 
 		GetFullPathNameA( fname.c_str(), reqLen, tmp, NULL);			//do the work
-#else
-        //use a glibc-specific implementation, which does not have the memory allocation
-        //problems of the standard version
-        char *tmp = realpath( fname.c_str() , 0 );
-        //note that *tmp is malloc'd by realpath.
-        if(tmp == NULL)
-            return std::string();
-        int reqLen = strlen(tmp);
-#endif
+
 		//strip trailing backslash:
-		if( tmp[reqLen-2] == '\\' )
+		if( tmp[reqLen-2] == os::sep )
 			tmp[reqLen-2] = 0;
-		//convert to lower case:
+		//convert to lower case
 		//for(size_t i=0; i< reqLen-1; i++)	tmp[i] = tolower(tmp);
 
 		std::string out( tmp );
 		delete tmp;
+#else
+        //use a glibc-specific implementation, which does not have the memory allocation
+        //	problems of the standard version
+        char *tmp = realpath( fname.c_str() , 0 );
+        //note that *tmp is malloc'd by realpath.
+        if(tmp == NULL)
+            return std::string();
+		//strip trailing backslash:
+		int reqLen = strlen(tmp);
+		if( tmp[reqLen-2] == os::sep )
+			tmp[reqLen-2] = 0;
+
+		std::string out( tmp );
+		free(tmp);	//it's malloced, don't use delete
+#endif
 		return out;
 	}
 
@@ -196,21 +217,29 @@ namespace path
 	}
 
 
-
-	std::string join(std::string p1, std::string p2)
+	//join two parts of a path, make sure there's 1 separator in the middle;
+	std::string join(const std::string& p1, const std::string& p2)
 	{
+		std::string out;
 		if( p1.length() == 0)
-			return p2;
-		if( p2.length() == 0)
-			return p1;
-
-		std::string out  = p1;
-		size_t ie = out.size()-1;
-		if( (out[ie] == '/') || (out[ie] == '\\') )
-			out[ie] = os::sep;
-		else // if (out[ie] != os::sep )
-			out.push_back(os::sep);
-		out.append(p2);
+			out =  p2;
+		else if( p2.length() == 0)
+			out = p1;
+		else
+		{
+			out  = p1;
+			size_t ie = out.size()-1;
+			if( (out[ie] == '/') || (out[ie] == '\\') )
+				out[ie] = os::sep;
+			else // if (out[ie] != os::sep )
+				out.push_back(os::sep);
+			//now 'out' ends with a correct path-separator, append p2 to it:
+			if( (p2[0] == '/') || (p2[0] == '\\') )
+				out.append( p2.substr(1) );
+			else
+				out.append(p2);
+		}
+		db_printf(55,"path::join(): '%s' + '%s' = '%s'\n", p1.c_str(), p2.c_str(), out.c_str() );
 		return out;
 	}
 
@@ -287,7 +316,7 @@ namespace nbuffer
 		{
 			n = fread(dst, nrCopy, 1, handle);
 			if( n != 1) {
-				db_printf(1,"bufferFile(): error reading %s: %zu\n", fname.c_str(), n );
+				db_printf(1,"bufferFile(): error reading %s: %llu\n", fname.c_str(), (LLU)n );
 			} else
 				_pos += nrCopy;
 		}

@@ -14,6 +14,7 @@
 
 #include <vector>
 #include <map>
+#include <pthread.h>
 
 //declare the public class, so header inclusion works:
 class slimIPC;
@@ -56,43 +57,16 @@ public:
 	uint16_t port;
 
 	/// empty initialization
-	musicFile(void)
-	{
-		format = '?';
-		nChannels = 0; nBits = 0; sampleRate = 0;
-		ip =0; port = 0;
-	}
+	musicFile(void);
 
-	//	initialize from a music file
+	///	initialize from a music file
 	musicFile(const char *fname, uint16_t port=9000);
 
 	/// init from a comma separated list of values
-	musicFile(string csv, uint16_t port=9000)
-	{
-		int i=0;
-		vector<string> items = pstring::split(csv, ',');
-		title  = items[i++];
-		artist = items[i++];
-		album  = items[i++];
-		format = items[i++][0];
-		nChannels = atoi( items[i++].c_str() );
-		nBits	  = atoi( items[i++].c_str() );
-		sampleRate= atoi( items[i++].c_str() );
-		url = items[i++];
-
-		this->port = port;
-		ip = 0;
-	}
+	musicFile(string csv, uint16_t port=9000);
 
 	/// convert to comma separated list of values
-	operator string()
-	{
-		stringstream out;
-		out << title << "," << artist << "," << album << ",";
-		out << format << "," << nChannels << "," << nBits << "," << sampleRate << ",";
-		out << url;
-		return out.str();
-	}
+	operator string();
 };
 
 
@@ -108,6 +82,7 @@ std::vector<musicFile> makeEntries( musicDB *db, dbQuery& query, size_t uniqueIn
 
 
 /// Playlist status, per group
+/// This class is not thread-safe.
 class playList
 {
 public:
@@ -116,18 +91,15 @@ public:
 	uint32_t lastUpdate;		// time of last update
 	bool		repeat;			//repeat list, after it's completed
 
-	//how to handle transition to next song for multiple clients:
+	//To handle transition to next song for multiple clients:
 	// first client to reach end-of-song, requests next.
 	// then request will pass a new play command to all clients.
-
-
-	//mutex??
 
 	//default constructor:
 	playList(): currentItem(0), lastUpdate(0), repeat(false)
 	{}
 
-	//allow read-only acces. is not very thread safe.
+	//allow read-only acces. is not thread safe.
 	vector<musicFile>::const_iterator begin(void) const
 	{	return items.begin();	}
 
@@ -135,29 +107,26 @@ public:
 	{	return items.end();	}
 
 
-	/// This can be made thread-safe:
-	musicFile get(size_t index)
-	{
-		musicFile ret;
-		if( index < items.size() )
-			ret = items[index];
-		return ret;
-	}
-
+	//get entry from the playlist
+	musicFile get(size_t index);
 };
-
 
 
 
 
 /// Handle information flow between multiple slim- and shout-client
 /// connections.
+/// TODO: add mutexes to make it thread safe.
 class slimIPC
 {
 private:
-	/// Configuration data
-	string		playListFile;
+	// Configuration data
+	string			playListFile;
 	configParser	*config;
+
+	// Connection to both servers:
+	TCPserverSlim	*slimServer;
+	TCPserverShout	*shoutServer;
 
 	/// Playlist groups
 	map<string, playList> group;
@@ -175,6 +144,8 @@ private:
 	std::vector<dev_s> devices;
 
 
+	/// Device reading, 
+	//	must be private for this class to be thread-safe
 	std::vector<dev_s>::iterator devByName( string clientName )
 	{
 		std::vector<dev_s>::iterator it = devices.begin();
@@ -185,12 +156,19 @@ private:
 	}
 
 
-public:
-	TCPserverShout	*shoutServer;	//these both shouldn't be neccesary.
-	TCPserverSlim	*slimServer;
+	//TODO: use real mutexes
+	struct {
+		pthread_mutex_t group;	//all playlist changes
+		pthread_mutex_t client;	//all client changes
+		pthread_mutex_t others;	//for slimServer and shoutServer
+	} mutex;
 
-	/// provide searches both for shout and slim proto
+
+public:
+	/// Provide searches both for shout and slim proto
+	/// the musicDB itself should be thread safe.
 	musicDB	   *db;
+
 
 	slimIPC(musicDB *db, configParser	*config);
 	~slimIPC(void);
@@ -199,6 +177,18 @@ public:
 	// both group and deviceGroups need to be stored
 	void load(void);
 	void save(void);
+
+	void registerSlimServer(TCPserverSlim *slimServer)
+	{
+		this->slimServer = slimServer;
+	}
+
+	void registerShoutServer(TCPserverShout *shoutServer)
+	{
+		this->shoutServer = shoutServer;
+	}
+
+	int getShoutPort(void);
 
 	/// Acces to the main configuration file
 	/// TODO: mutex this.
@@ -230,29 +220,6 @@ public:
 	int delDevice(string clientName);
 
 
-	/// Device reading, for shoutProto
-	const client* getDevice(string clientName)
-	{
-		const client *dev =  NULL;
-		std::vector<dev_s>::iterator client = 	devByName( clientName );
-		if(client != devices.end() )
-			dev = client->device;
-		return dev;
-	}
-
-
-	/// Get group name for a given client
-	string getGroup(string clientName)
-	{
-		string groupName;
-		size_t idx;
-		for( idx=0; idx < devices.size(); idx++)
-			if( devices[idx].name == clientName )
-				break;
-		if( idx < devices.size() )
-			groupName = devices[idx].name;
-		return groupName;
-	}
 
 
 	/// Get a list of all connected devices
@@ -276,6 +243,8 @@ public:
 	/// When one client needs the next song, it calls seekList also.
 	int seekList(string groupName, int offset, int origin, bool stopCurrent=true);
 
+	/// Get group name for a given client
+	string getGroup(string clientName);
 
 	// Playlist control, for both servers:
 	/// Replace all items in the playlist
@@ -285,6 +254,7 @@ public:
 
 
 	/// Get current playlist for a device:
+	/// TODO: make a copy, else it's not thread-safe.
 	const playList* getList(string clientName)
 	{
 		const playList *ret = NULL;
@@ -296,13 +266,7 @@ public:
 
 
 	/// Get current song
-	musicFile getSong(string groupName)
-	{
-		musicFile f;
-		if( group.find(groupName) != group.end() )
-			f = group[groupName].items[ group[groupName].currentItem ];
-		return f;
-	}
+	musicFile getSong(string groupName);
 
 	/// Link groups to clients
 	int connect(string clientName, string groupName);

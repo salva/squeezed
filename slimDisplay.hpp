@@ -15,9 +15,8 @@
 
 #include "debug.h"
 
-
+#include "slimProto.hpp"	//needs to be first, to include winsock.h before windows.h
 #include "slimIPC.hpp"
-#include "slimProto.hpp"
 enum commands_e;		//slimProto includes this file.
 
 
@@ -192,7 +191,7 @@ private:
     virtual void draw(char transition)
     {
 		char index[8];
-		sprintf(index, "%zu/%zu", currentItem+1, itemSize() );
+		sprintf(index, "%llu/%llu", (LLU)(currentItem+1), (LLU)itemSize() );
 
 		display->cls();
 		display->gotoxy( 0, 0); display->print( menuName.c_str() );

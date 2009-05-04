@@ -2,7 +2,7 @@
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="9,00"
-	Name="squeezeD"
+	Name="squeezed"
 	ProjectGUID="{0C2729DA-9AC1-49BC-A4FD-B7E46F34DD3A}"
 	RootNamespace="squeezeD"
 	Keyword="Win32Proj"
@@ -145,7 +145,8 @@
 				AdditionalDependencies="Ws2_32.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="..\bin\win32"
-				GenerateDebugInformation="false"
+				GenerateManifest="false"
+				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
@@ -200,6 +201,10 @@
 			</File>
 			<File
 				RelativePath="..\musicDB.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\win32\pthread.c"
 				>
 			</File>
 			<File

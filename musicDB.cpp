@@ -116,7 +116,7 @@ void listdirRecursive( const std::string& basePath,
 		bool isDir = path::isdir( fullEntry );	//cygwin doesn't have d_type
 #else
 		//if ( (pEntry->d_type & DT_DIR) && strcmp ( pEntry->d_name, "..") && strcmp ( pEntry->d_name, ".") )
-		bool isDir = (pEntry->d_type & DT_DIR);
+		bool isDir = (pEntry->d_type & DT_DIR)!=0;
 #endif
 		if ( (isDir) && strcmp ( pEntry->d_name, "..") && strcmp ( pEntry->d_name, ".") )
 		{
@@ -198,7 +198,8 @@ void musicDB::scan(const char *dbName)
 	vector<uint32_t> dynOffset;		//offset into f_db, per entry
 
 	std::list<dbEntry> entries;
-	listdirRecursive( basePath, "", entries );
+	std::string relpath = "";	//need a reference, so can't pass a "" to listdirRecursive()
+	listdirRecursive( basePath, relpath, entries );
 
 	// Generate data file
 	f_db = fopen(dbName, "wb");	//file with all data
@@ -431,22 +432,25 @@ dbQuery::dbQuery(musicDB *db, dbField field, const char *match):
 
 		//update unique indices:
 		uniqueIdx.clear();
-		uniqueIdx.push_back( uIdx(*itBegin, 1 ) );
-		string lastToken = (*db)[ uniqueIdx.back().idx ].getField(field);
-
-		for(std::vector<uint32_t>::iterator it=itBegin; it != itEnd; it++)
+		if( itBegin != itEnd)
 		{
-			dbEntry r= (*db)[*it];
-			if( r.getField(field) == lastToken )
+			uniqueIdx.push_back( uIdx(*itBegin, 1 ) );
+			string lastToken = (*db)[ uniqueIdx.back().idx ].getField(field);
+
+			for(std::vector<uint32_t>::iterator it=itBegin; it != itEnd; it++)
 			{
-				uniqueIdx.back().count++;
-			} else {
-				lastToken = r.getField(field);
-				uniqueIdx.push_back(  uIdx(*it, 1 ) );
+				dbEntry r= (*db)[*it];
+				if( r.getField(field) == lastToken )
+				{
+					uniqueIdx.back().count++;
+				} else {
+					lastToken = r.getField(field);
+					uniqueIdx.push_back(  uIdx(*it, 1 ) );
+				}
 			}
 		}
 
-		db_printf(5,"found %zu items for key %s, match '%s'. %zu unique\n", itEnd-itBegin, dbFieldStr[field], match, uniqueIdx.size() );
+		db_printf(5,"found %lli items for key %s, match '%s'. %lli unique\n", (long long)(itEnd-itBegin), dbFieldStr[field], match, (long long)(uniqueIdx.size()) );
 		if( ilen < 80 )
 		{
 			for(std::vector<uint32_t>::iterator it=itBegin; it != itEnd; it++)

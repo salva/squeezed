@@ -23,8 +23,8 @@
 	#pragma warning (disable: 4996)
 #endif
 
-
-
+//used for 32/64-bit compatible printing of size_t:
+typedef unsigned long long LLU;
 
 
 /// Really low-level things
@@ -81,12 +81,12 @@ namespace path {
 	int htoi(char c);
 
 	/// put url/http escapes codes in to fname
-	std::string escape(const std::string fname);
+	std::string escape(const std::string& fname);
 
 	/// Replace url-escape codes by their actual ascii characters
-	std::string unescape(const std::string fname);
+	std::string unescape(const std::string& fname);
 
-	std::string normalize(const std::string fname);
+	std::string normalize(std::string fname);
 
 	bool isdir(const std::string path);
 
@@ -96,7 +96,7 @@ namespace path {
 	std::vector<std::string> listdir(const std::string path);
 
 	/// Combine two strings into a single pathname.
-	std::string join(std::string p1, std::string p2);
+	std::string join(const std::string& p1, const std::string& p2);
 } //namespace path
 
 

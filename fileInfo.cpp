@@ -259,7 +259,6 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 			text.assign(frame->data  , frame->size  );
 		else if( frame->data[0] == 0)		//ISO-8859-1, 1 byte, zero terminated
 			text.assign(frame->data+1, frame->size-1);		//also 1-byte encoding
-#ifndef __CYGWIN__  //cygwin 1.5 doesn't have unicdoe support
 		else if( frame->data[0] == 1)		//UTF-16, unicode, zero-terminated
 		{
 			//std::wstring wtext = std::wstring((wchar_t*)(frame->data+3), (frame->size-3)/2); //unicode
@@ -276,7 +275,6 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 			text = utf16_to_char( frame->data+1, frame->size-1 );
 			db_printf(15,"frame %s, text = '%s'\n", frame->ID, text.c_str() );
 		}
-#endif
 		else if( frame->data[0] == 3)		//UTF-8 [UTF-8] encoded Unicode [UNICODE]
 			text.assign(frame->data+1, frame->size-1);
 

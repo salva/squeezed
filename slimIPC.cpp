@@ -11,6 +11,15 @@
 
 //----------------- small helper functions ---------------------
 
+
+musicFile::musicFile(void)
+{
+	format = '?';
+	nChannels = 0; nBits = 0; sampleRate = 0;
+	ip =0; port = 0;
+}
+
+
 musicFile::musicFile(const char *fname, uint16_t port)
 {
 	std::auto_ptr<fileInfo> finfo = getFileInfo(fname);
@@ -35,6 +44,36 @@ musicFile::musicFile(const char *fname, uint16_t port)
 	} else
 		url			= "";
 }
+
+
+// init from a comma separated list of values
+musicFile::musicFile(string csv, uint16_t port)
+{
+	int i=0;
+	vector<string> items = pstring::split(csv, ',');
+	title  = items[i++];
+	artist = items[i++];
+	album  = items[i++];
+	format = items[i++][0];
+	nChannels = atoi( items[i++].c_str() );
+	nBits	  = atoi( items[i++].c_str() );
+	sampleRate= atoi( items[i++].c_str() );
+	url = items[i++];
+
+	this->port = port;
+	ip = 0;
+}
+
+
+musicFile::operator string()
+{
+	stringstream out;
+	out << title << "," << artist << "," << album << ",";
+	out << format << "," << nChannels << "," << nBits << "," << sampleRate << ",";
+	out << url;
+	return out.str();
+}
+
 
 
 /// Make playlist entries from filename/directory name
@@ -85,12 +124,25 @@ std::vector<musicFile> makeEntries( musicDB *db, dbQuery& query, size_t uniqueIn
 }
 
 
+
+musicFile playList::get(size_t index)
+{
+	musicFile ret;
+	if( index < items.size() )
+		ret = items[index];
+	return ret;
+}
+
 //----------------- external interface -------------------------
 
 slimIPC::slimIPC(musicDB *db, configParser	*config): db(db)
 {
 	this->config = config;
 	playListFile = path::join( config->get("config","path",".") , "slimIPC.ini" );
+	this->slimServer  = NULL;
+	this->shoutServer = NULL;
+
+	pthread_mutex_init( &mutex.group, NULL);
 
 	//Load all playlists from disk
 	load( );
@@ -126,6 +178,7 @@ slimIPC::slimIPC(musicDB *db, configParser	*config): db(db)
 
 slimIPC::~slimIPC(void)
 {
+	pthread_mutex_destroy( &mutex.group );
 }
 
 
@@ -185,6 +238,13 @@ void slimIPC::save( void )
 
 
 
+int slimIPC::getShoutPort(void)
+{
+	return shoutServer->getPort();
+}
+
+
+
 // Device control, for slimProto
 int slimIPC::addDevice(string clientName, client* dev)	//add a device to the current list
 {
@@ -212,6 +272,22 @@ int slimIPC::delDevice(string clientName)
 	}
 	return devices.size();
 }
+
+
+
+// Get group name for a given client
+string slimIPC::getGroup(string clientName)
+{
+	string groupName;
+	size_t idx;
+	for( idx=0; idx < devices.size(); idx++)
+		if( devices[idx].name == clientName )
+			break;
+	if( idx < devices.size() )
+		groupName = devices[idx].name;
+	return groupName;
+}
+
 
 
 // set a new playlist
@@ -295,4 +371,15 @@ int slimIPC::seekList(string groupName, int offset, int origin, bool stopCurrent
 			}
 	}
 	return list->currentItem; 
+}
+
+
+
+// Get current song
+musicFile slimIPC::getSong(string groupName)
+{
+	musicFile f;
+	if( group.find(groupName) != group.end() )
+		f = group[groupName].items[ group[groupName].currentItem ];
+	return f;
 }

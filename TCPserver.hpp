@@ -27,17 +27,21 @@
 #include <stdlib.h>
 #include <vector>
 
-#include "debug.h"
-#include "util.hpp"	//for the buffer, which can be memory, file, or something else
-
+//need to include winsock before windows. since util.hpp uses windows, include it here
 #ifdef WIN32
 	//#define NOMINMAX
 	#include <winsock2.h>
-	//#include <Ws2tcpip.h>
+	#include <Ws2tcpip.h>
 	#define MSG_NOSIGNAL 0
 #else
+    #include <sys/socket.h> //for MSG_NOSIGNAL
 	typedef int SOCKET;
 #endif
+
+
+#include "debug.h"
+#include "util.hpp"	//for the buffer, which can be memory, file, or something else
+
 
 
 
@@ -82,9 +86,9 @@ public:
 	int writeBuf(void)
 	{
 		//don't raise signals, since they're hard to use in multi-threaded apps:
-		int sendFlags = MSG_NOSIGNAL;	
+		int sendFlags = MSG_NOSIGNAL;
 
-	if( writeBufs.size() == 0)
+		if( writeBufs.size() == 0)
 			return 0;
 		size_t pos   = writeBufs[0]->pos();
 		size_t maxBytes = writeBufs[0]->size() - pos;
@@ -106,14 +110,14 @@ public:
 			nSend = send( socketFD, localBuf, maxBytes, sendFlags);
 			if( nSend != (int)maxBytes)
 			{
-				db_printf(1,"(F) sending %zu bytes to socket %i, ", maxBytes, socketFD);
+				db_printf(1,"(F) sending %llu bytes to socket %i, ", (LLU)maxBytes, socketFD);
 				db_printf(1,"(F) sent %i\n", nSend);
-				db_printf(1,"(F) buf._pos = %zu\n", writeBufs[0]->pos() );
+				db_printf(1,"(F) buf._pos = %llu\n", (LLU)writeBufs[0]->pos() );
 			}
 		}
 
 		maxBytes = writeBufs[0]->size() - writeBufs[0]->pos();
-		
+
 		//Stop sending if we're done, or if we couldn't send anything:
 		if( (nSend <= 0) || (maxBytes <= 0 ) )
 		{

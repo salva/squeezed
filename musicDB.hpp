@@ -178,6 +178,8 @@ public:
 
 	std::string getBasePath(void) {return basePath; }
 
+	/// databas acces. TODO: mutex this with
+	/// scan() and index()
 	const dbEntry operator[](const uint32_t idx)
 	{
 		dbEntry ret;
@@ -250,15 +252,28 @@ public:
 
 	///	number of unique results:
 	size_t uSize(void)
-	{	return uniqueIdx.size();			}
+	{
+		return uniqueIdx.size();			
+	}
+
 
 	/// db index into, for a unique search result
 	uint32_t uIndex(size_t index)
-	{	return uniqueIdx[index].idx;		}
+	{	
+		uint32_t idx = 0;
+		if( index < uniqueIdx.size() )
+			idx = uniqueIdx[index].idx;
+		return idx;		
+	}
 
-	/// number of items within this unique result
+	/// Number of items within this unique result
 	size_t uCount(size_t index)
-	{	return uniqueIdx[index].count;	}
+	{	
+		size_t count = 0;
+		if( index < uniqueIdx.size() )
+			count = uniqueIdx[index].count;
+		return count;	
+	}
 
 
 	const dbEntry operator[](const size_t resultIdx)

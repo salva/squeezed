@@ -1,9 +1,11 @@
 
+
+#include "serverShoutCast.hpp"	//needs to be first, to include winsock.h before windows.h
+
 #include "slimIPC.hpp"
 #include "util.hpp"
 #include "configParser.hpp"
 
-#include "serverShoutCast.hpp"
 
 
 
@@ -11,7 +13,7 @@ TCPserverShout::TCPserverShout(slimIPC *ipc, int port, int maxConnections) :
 		TCPserver( port, maxConnections ),
 		ipc(ipc)
 {
-	ipc->shoutServer = this;
+	ipc->registerShoutServer(this);
 }
 
 
@@ -221,7 +223,7 @@ nbuffer::buffer* shoutConnectionHandler::handleGet(const char* request)
 			break;
 	}
 
-	db_printf(1,"SHOUT: handleGet(%zu), root dir %zu\n", strlen(request), dynIdx );
+	db_printf(1,"SHOUT: handleGet(%llu), root dir %zu\n", (LLU)strlen(request), dynIdx );
 	switch(dynIdx)
 	{
 		case ROOT:		// virtual root directory

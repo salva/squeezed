@@ -1,7 +1,9 @@
 
 /**
  * @file 
- * minimal posix-like wrapper for threading functions
+ * Minimal posix-like wrapper for threading functions
+ *
+ * It is not complete, but provides basic functionality
  *
  *
  * \ingroup win32
@@ -11,12 +13,16 @@
 #ifndef _PTHREAD_H_
 #define _PTHREAD_H_
 
-
 //#define NOMINMAX
-#include "windows.h"
-
-
+#include <windows.h>
 #define restrict 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*----------------- Threads --------------------------------------------------*/
+
 typedef HANDLE pthread_t;
 typedef void pthread_attr_t;
 
@@ -27,19 +33,7 @@ int pthread_create(pthread_t *restrict thread, //< output: the thread
 	 const pthread_attr_t *restrict attr,	   //< {currently not used}
 	 void *(*start_routine)(void *),		   //< pointer to function this thread executes
 	 void *restrict arg					       //< pointer to arguments for start_routine()
-	 )
-{
-	DWORD threadId;
-	*thread = CreateThread( 
-        NULL,                   // default security attributes
-        0,                      // use default stack size  
-        (LPTHREAD_START_ROUTINE)start_routine,			// thread function name
-        arg,					// argument to thread function 
-        0,                      // use default creation flags 
-        &threadId);				// returns the thread identifier 
-
-	return threadId;
-}
+	 );
 
 
 
@@ -57,10 +51,7 @@ cleanup actions, including, but not limited to, calling atexit() routines
 that may exist.
 */
 void
-pthread_exit(void *value_ptr)
-{
-
-}
+pthread_exit(void *value_ptr);
 
 
 
@@ -82,16 +73,64 @@ RETURN VALUES
 If successful,  the pthread_join() function will return zero.  Otherwise,
 an error number will be returned to indicate the error.
 */
-int pthread_join(pthread_t thread, void **value_ptr)
-{
-	WaitForSingleObject(thread, INFINITE);
-	return 0;
+int pthread_join(pthread_t thread, void **value_ptr);
+
+
+/*----------------- Mutexes --------------------------------------------------*/
+
+
+typedef HANDLE pthread_mutex_t;
+typedef SECURITY_ATTRIBUTES pthread_mutexattr_t;
+
+
+/** The pthread_mutex_init function initializes the given mutex with the given attributes. 
+	If attr is null, then the default attributes are used. 
+
+Returns
+
+The pthread_mutex_init function returns zero if the call is successful, otherwise it sets errno to EINVAL and returns -1.
+
+Implementation Notes
+
+The argument attr must be null. The default attributes are always used. 
+*/
+int  pthread_mutex_init (pthread_mutex_t * mutex , pthread_mutexattr_t * attr );
+
+
+
+int  pthread_mutex_destroy (pthread_mutex_t * mutex );
+
+
+
+
+/**The pthread_mutex_lock function locks the given mutex. 
+If the mutex is already locked, then the calling thread blocks until the thread that 
+currently holds the mutex unlocks it.
+
+The pthread_mutex_lock function returns zero if the call is successful,
+otherwise it sets errno to EINVAL and returns -1. 
+*/
+int  pthread_mutex_lock (pthread_mutex_t * mutex );
+
+
+
+/**The pthread_mutex_unlock function unlocks the given mutex.
+
+The pthread_mutex_unlock function returns zero if the call is successful, 
+otherwise it sets errno to EINVAL and returns -1. 
+*/
+int  pthread_mutex_unlock (pthread_mutex_t * mutex );
+
+
+
+#ifdef __cplusplus
 }
+#endif 
+
+
+#endif	//pthread_h
+
 
 /*@}
  *end of doxygen group
  */
-
-
-
-#endif

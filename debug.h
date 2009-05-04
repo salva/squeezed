@@ -29,7 +29,7 @@ void db_printf(int db, const char *fmt, ... )
 #if 1
 #define db_printf(lvl, ...)	\
 	if (lvl < dbg )  {		\
-		fprintf(stdout, __VA_ARGS__ ); \
+		fprintf(stderr, __VA_ARGS__ ); \
 	}
 #else
 #define db_printf(lvl, ...)

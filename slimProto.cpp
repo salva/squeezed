@@ -102,8 +102,8 @@ TCPserverSlim::TCPserverSlim(slimIPC *ipc, int port, int maxConnections) :
 	TCPserver(port,maxConnections),
 		ipc(ipc)
 	{
-		ipc->slimServer = this;
-		printf("slimProto: port %i, data port %i\n", port, ipc->shoutServer->getPort());
+		ipc->registerSlimServer(this);
+		printf("slimProto: port %i, data port %i\n", port, ipc->getShoutPort() );
 	}
 
 
@@ -212,25 +212,45 @@ bool slimConnectionHandler::processRead(const void *data, size_t len)
 //---------------------------- Receive functions -----------------------------
 
 
+// macro definition, so it can be used in switch/case statements
+#ifdef WIN32
+#define __BYTE_ORDER 1
+#define __LITTLE_ENDIAN 1
+#endif
+
+#if __BYTE_ORDER == __BIG_ENDIAN
+#define slimOpCode( ch0, ch1, ch2, ch3 )				\
+		( (uint32_t)(uint8_t)(ch3) | ( (uint32_t)(uint8_t)(ch2) << 8 ) |	\
+		( (uint32_t)(uint8_t)(ch1) << 16 ) | ( (uint32_t)(uint8_t)(ch0) << 24 ) )
+#endif
+
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+#define slimOpCode( ch0, ch1, ch2, ch3 )				\
+		( (uint32_t)(uint8_t)(ch0) | ( (uint32_t)(uint8_t)(ch1) << 8 ) |	\
+		( (uint32_t)(uint8_t)(ch2) << 16 ) | ( (uint32_t)(uint8_t)(ch3) << 24 ) )
+#endif
+
+
 // Handle a complete message
 bool slimConnectionHandler::parseInput(uint32_t opU32, netBuffer& buf, int len )
 {
+
 	bool keepConnection = true;
 	//determine operation type:
 	switch(opU32)
 	{
-	case mmioFOURCC('H','E','L','O'):
+	case slimOpCode('H','E','L','O'):
 		helo(buf,len);  break;
-	case mmioFOURCC('B','Y','E','!'):
+	case slimOpCode('B','Y','E','!'):
 		keepConnection = false;
 		break;
-	case mmioFOURCC('I','R',' ',' '):
+	case slimOpCode('I','R',' ',' '):
 		ir(buf,len);	break;
-	case mmioFOURCC('S','T','A','T'):
+	case slimOpCode('S','T','A','T'):
 		stat(buf,len);  break;
-	case mmioFOURCC('R','E','S','P'):
+	case slimOpCode('R','E','S','P'):
 		resp(buf,len);	break;
-	case mmioFOURCC('A','N','I','C'):
+	case slimOpCode('A','N','I','C'):
 		db_printf(3,"< Animation complete\n");
 		break;
 	default:
@@ -281,12 +301,12 @@ void slimConnectionHandler::helo(netBuffer& buf, size_t len)
 	//Initialize the display:
 	sprintf(this->state.uuid, "%02x:%02x:%02x:%02x:%02x:%02x",
 		device.mac[0], device.mac[1], device.mac[2], device.mac[3], device.mac[4], device.mac[5] );
-	//state.currentGroup =
+	//register to the central system:
 	ipc->addDevice( this->state.uuid, this);
 
 	//debug output:
-	db_printf(1,"helo(%zu): Id = %s.%i, uuid = %s, #recv = %lli\n",
-		len, sqDeviceName(device.ID), device.revision, state.uuid, (long long)device.recv );
+	db_printf(1,"helo(%llu): Id = %s.%i, uuid = %s, #recv = %llu\n",
+		(LLU)len, sqDeviceName(device.ID), device.revision, state.uuid, (LLU)device.recv );
 
 
 	//code from Slim/networking/slimproto.pm, line 1260:
@@ -479,28 +499,28 @@ void slimConnectionHandler::stat(netBuffer& buf, int len)
 
 	*((uint32_t*)event) = status.eventCode;
 
-	if( status.eventCode == mmioFOURCC('S','T','M','h') )
+	if( status.eventCode == slimOpCode('S','T','M','h') )
 	{
 		db_printf(2,"<\tHeader has been parsed\n");
 	}
-	else if( status.eventCode == mmioFOURCC('S','T','M','s') )
+	else if( status.eventCode == slimOpCode('S','T','M','s') )
 	{
 		db_printf(2,"<\tplayback has started\n");
 	}
-	else if( status.eventCode == mmioFOURCC('S','T','M','t') )
+	else if( status.eventCode == slimOpCode('S','T','M','t') )
 	{
 		db_printf(2,"<\theartbeat: pos = %.1f sec\n", status.songMSec / 1e3 );
 	}
-	else if( status.eventCode == mmioFOURCC('S','T','M','c') )
+	else if( status.eventCode == slimOpCode('S','T','M','c') )
 	{
 		db_printf(2,"<\tConnect???\n");
 	}
-	else if( status.eventCode == mmioFOURCC('S','T','M','d') )
+	else if( status.eventCode == slimOpCode('S','T','M','d') )
 	{
 		db_printf(2,"<\tplayer is ready for the next track\n");
 		ipc->seekList( state.currentGroup, 1, SEEK_CUR, false);	//start a new song, but don't stop the current one yet
 	}
-	else if( status.eventCode == mmioFOURCC('S','T','M','u') )
+	else if( status.eventCode == slimOpCode('S','T','M','u') )
 	{
 		db_printf(2,"<\tdata underrun\n");
 		ipc->seekList( state.currentGroup, 1, SEEK_CUR, true);	//abort current stream, start something new.
@@ -607,7 +627,7 @@ void slimConnectionHandler::play()
 	//TODO: use ipc-> commands, so all player in the current group start playing.
 	stream.command    = 's';	//start the stream
 	stream.serverIP   = 0; //inet_addr( "127.0.0.1" );
-	stream.serverPort = ipc->shoutServer->getPort();
+	stream.serverPort = ipc->getShoutPort();
 	stream.autostart  = '1';
 	STRM();
 	state.playState = state.PL_PLAY;

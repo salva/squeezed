@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="SqueezeD" />
+		<Option pch_mode="2" />
+		<Option compiler="cygwin" />
+		<Build>
+			<Target title="Debug">
+				<Option output="..\bin\cygwin\SqueezeD" prefix_auto="1" extension_auto="1" />
+				<Option object_output="..\obj\cygwin\Debug\" />
+				<Option type="1" />
+				<Option compiler="cygwin" />
+				<Compiler>
+					<Add option="-g" />
+				</Compiler>
+			</Target>
+			<Target title="Release">
+				<Option output="..\bin\cygwin\SqueezeD" prefix_auto="1" extension_auto="1" />
+				<Option object_output="..\obj\cygwin\Release\" />
+				<Option type="1" />
+				<Option compiler="cygwin" />
+				<Compiler>
+					<Add option="-march=pentium-mmx" />
+					<Add option="-Os" />
+				</Compiler>
+				<Linker>
+					<Add option="-s" />
+				</Linker>
+			</Target>
+		</Build>
+		<Compiler>
+			<Add option="-Wall" />
+		</Compiler>
+		<Unit filename="..\TCPserver.hpp" />
+		<Unit filename="..\TCPserverPosix.cpp" />
+		<Unit filename="..\configParser.cpp" />
+		<Unit filename="..\configParser.hpp" />
+		<Unit filename="..\debug.h" />
+		<Unit filename="..\fileInfo.cpp" />
+		<Unit filename="..\fileInfo.hpp" />
+		<Unit filename="..\main.cpp" />
+		<Unit filename="..\musicDB.cpp" />
+		<Unit filename="..\musicDB.hpp" />
+		<Unit filename="..\serverShoutCast.cpp" />
+		<Unit filename="..\serverShoutCast.hpp" />
+		<Unit filename="..\slimDisplay.cpp" />
+		<Unit filename="..\slimDisplay.hpp" />
+		<Unit filename="..\slimIPC.cpp" />
+		<Unit filename="..\slimIPC.hpp" />
+		<Unit filename="..\slimProto.cpp" />
+		<Unit filename="..\slimProto.hpp" />
+		<Unit filename="..\util.cpp" />
+		<Unit filename="..\util.hpp" />
+		<Extensions>
+			<code_completion />
+			<envvars />
+			<debugger />
+			<lib_finder disable_auto="1" />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>

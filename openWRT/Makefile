@@ -64,7 +64,7 @@ endef
 
 define Package/squeezed/install
 		$(INSTALL_DIR) $(1)/usr/bin
-		$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/openWRT/SqueezeD $(1)/usr/bin/
+		$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/openWRT/squeezed $(1)/usr/bin/
 #		$(INSTALL_DIR) $(1)/usr/lib
 endef
 
