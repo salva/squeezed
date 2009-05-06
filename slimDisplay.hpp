@@ -581,6 +581,20 @@ private:
 			return subDirs.back();
 	}
 
+	static bool stringLessThan( std::string a,  std::string b) 
+	{
+		std::transform(a.begin(), a.end(), a.begin(), toupper);
+		std::transform(b.begin(), b.end(), b.begin(), toupper);
+		return a < b;
+	}
+
+	void setItems(std::string&  path )
+	{
+		items = path::listdir( path );
+		// Sort case insensitive:
+		std::sort( items.begin(), items.end(), stringLessThan );	
+	}
+
 
 public:
 	slimBrowseMenu(slimDisplay *display, slimScreen *parent ): slimScreen(display)
@@ -591,7 +605,7 @@ public:
 		parentScreen = parent;
 
 		//get file listing:
-		items = path::listdir( fullPath() );
+		setItems(  fullPath() );
 	}
 
 

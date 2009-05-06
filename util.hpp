@@ -7,6 +7,7 @@
 #include <vector>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 
 #include <sys/stat.h>
 
@@ -50,6 +51,20 @@ namespace util
 	{
 		x = x < min ? min: x;
 		return x > max ? max: x;
+	}
+
+	/// helper function for sort()
+	template <class T>
+	static bool lessThan( T a, T b) 
+	{
+		return a < b;
+	}
+
+	/// sort a list
+	template <class T>
+	void sort( std::vector<T> &vec)
+	{
+		std::sort( vec.begin(), vec.end(), lessThan<T> );
 	}
 }
 
@@ -97,6 +112,7 @@ namespace path {
 
 	/// Combine two strings into a single pathname.
 	std::string join(const std::string& p1, const std::string& p2);
+
 } //namespace path
 
 

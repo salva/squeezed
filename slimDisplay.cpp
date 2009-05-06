@@ -514,7 +514,7 @@ bool slimBrowseMenu::command(commands_e cmd)
 		else {
 			string dir = subDirs.back();
 			subDirs.pop_back();
-			items = path::listdir( fullPath() );
+			setItems( fullPath() );
 			//find dir in files:
 			itemsPos = 0;
 			for(size_t i=0; i< items.size(); i++)
@@ -526,7 +526,7 @@ bool slimBrowseMenu::command(commands_e cmd)
 		if( path::isdir( url  )  )
 		{
 			subDirs.push_back( items[itemsPos] );
-			items = path::listdir( fullPath() );
+			setItems( fullPath() );
 			itemsPos = 0;
 		}
 		//TODO: display a file info menu in case it's not a directory??
