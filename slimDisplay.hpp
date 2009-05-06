@@ -447,7 +447,10 @@ public:
 	/// Generate a name for the menu item:
 	string getName(listIterator it)
 	{
-		string displayName = it->title + "(" + it->artist + ")";
+		const playList *list = device->ipc->getList( device->uuid() );
+		string displayName;
+		if( it != list->end() )
+			displayName = it->title + "(" + it->artist + ")";
 		return displayName;
 	}
 

@@ -125,7 +125,7 @@ std::vector<musicFile> makeEntries( musicDB *db, dbQuery& query, size_t uniqueIn
 
 
 
-musicFile playList::get(size_t index)
+musicFile playList::get(size_t index) const
 {
 	musicFile ret;
 	if( index < items.size() )

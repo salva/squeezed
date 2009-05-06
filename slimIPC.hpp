@@ -108,7 +108,7 @@ public:
 
 
 	//get entry from the playlist
-	musicFile get(size_t index);
+	musicFile get(size_t index) const;
 };
 
 

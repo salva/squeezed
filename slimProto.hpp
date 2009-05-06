@@ -330,6 +330,27 @@ private:
         uint16_t serverPort;	// default 9000
         uint32_t serverIP;		// 0 implies control server
 
+		void setSampleSize(int nrBits)
+		{
+			if(nrBits == 8)	pcmSampleSize = '0';
+			if(nrBits ==16)	pcmSampleSize = '1';
+			if(nrBits ==24)	pcmSampleSize = '2';
+			if(nrBits ==32)	pcmSampleSize = '3';
+		}
+
+		void setSampleRate(int Hz)
+		{
+			if(Hz == 11025)	pcmSampleRate = '0';
+			if(Hz == 22050)	pcmSampleRate = '1';
+			if(Hz == 44100)	pcmSampleRate = '2';
+			if(Hz == 48000)	pcmSampleRate = '3';
+			if(Hz ==  8000)	pcmSampleRate = '5';
+			if(Hz == 12000)	pcmSampleRate = '6';
+			if(Hz == 16000)	pcmSampleRate = '7';
+			if(Hz == 24000)	pcmSampleRate = '8';
+			if(Hz == 96000)	pcmSampleRate = '9';
+		}
+
 		// Setup default values (for mp3):
 		Stream( )
 		{

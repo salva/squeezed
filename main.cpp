@@ -93,6 +93,14 @@ void testShout(void)
 }
 
 
+void testFlac(void)
+{
+	const char fname[] = "test.flac"
+	std::auto_ptr<fileInfo> fInfo = getFileInfo(fname );
+	int dummy=1;
+}
+
+
 //one thread per port:
 void startThreads()
 {
@@ -161,6 +169,7 @@ int main()
 {
 	//testDB();
 	//testShout();
+	//testFlac();
 
 	startThreads();
 

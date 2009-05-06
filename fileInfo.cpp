@@ -33,8 +33,6 @@
 #include "fileInfo.hpp"
 
 
-
-
 /// Get mime type, based on the extension of a filename
 std::string getMime(const char *extension)
 {
@@ -223,7 +221,7 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 	if( hdr.version[0] < 3)	//uses a different frame structure.
 		return -3;
 
-	//bool sync      = (hdr.flags & (1<<7)) != 0;
+	bool sync      = (hdr.flags & (1<<7)) != 0;
 	bool hasExtHdr = (hdr.flags & (1<<6)) != 0;
 	bool flagsOk   = (hdr.flags & 31    ) == 0;
 	if( !flagsOk )
@@ -244,7 +242,24 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 	if( n < 1)
 		hdr.size = 0;	//couldn't read it.
 
-	while( fpos < hdr.size )
+	//reverse the protection against synchronization bytes:
+	size_t unSyncLength = hdr.size;
+	if( sync )
+	{
+		char *out = frames, *in  = frames;
+		for(size_t i=0; i < hdr.size-1; i++)
+		{
+			*out++ = *in;
+			if( (in[0] == '\xFF') && (in[1] == '\x00') )
+				in++;
+			in++;
+		}
+		*out = *in;	//copy last byte
+		unSyncLength = (out+1 - frames);
+	}
+
+
+	while( fpos < unSyncLength )
 	{
 		std::string text;
 
@@ -285,8 +300,150 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 				tags[frameIDs[i][1]] = text;
 				break;
 			}
-	} //while (ftell(f))
-	return 0;
+	} //while (hdr.size)
+	return hdr.size + sizeof(hdr);	//start of the data
+}
+
+std::string dec2bin(uint32_t v)
+{
+	std::string out;
+	out.resize(32);
+	for(int i=0; i<32; i++)
+	{
+		bool s = ( (v & (1<<i)) != 0 );
+		out[i] = (char)('0' + s) ;
+	}
+	return out;
+}
+
+std::string dec2bin(char v)
+{
+	std::string out="12345678";
+	for(int i=0; i<8; i++)
+	{
+		bool s = ( (v & (1<<i)) != 0 );
+		out[i] = (char)('0' + s) ;
+	}
+	return out;
+}
+
+int bitmask(int nrBits)
+{
+	return (1<<nrBits) - 1;
+}
+
+namespace flac
+{
+	enum blockType{
+		btSteamInfo = 0,
+		btPadding, btApplication, btSeektable, btVorbisComment,
+		btCueSheet, btPicture
+	};
+
+	_align_pre_(1) struct metadataBlock {
+		int isLast: 1;
+		int blockType: 7;
+		int length: 24;
+	} _align_post_(1);
+
+	_align_pre_(1) struct blkStreamInfo {
+		metadataBlock hdr;
+		uint16_t blkSizeMin;
+		uint16_t blkSizeMax;
+		uint32_t frmSizeMin;
+		uint32_t frmSizeMax;
+		uint32_t sampleRate;	//in Hz
+		uint8_t nrChannels;		//number of channels 
+		uint8_t bits;			//bits per sample 
+		uint64_t nrSamples;		//stream length in samples
+		char md5[16];
+		//unsigned short md5: 128;		//md5 of uncompressed data
+
+	} _align_post_(1);
+
+
+	struct blkStreamInfo2 {
+		//metadataBlock hdr;
+		char hdr[4];
+		char data[34];
+
+		metadataBlock* getHdr(void)
+		{
+			return (metadataBlock*)hdr;
+		}
+
+		uint16_t getU16(const char *data) const
+		{
+			return ntohs( *( (uint16_t*)(data) ));
+		}
+
+		uint32_t getU32(const char *data) const
+		{
+			return ntohl( *( (uint32_t*)(data) ));
+		}
+
+
+		//header interpretation + endiannes conversion:
+		blkStreamInfo parse(void)
+		{
+			blkStreamInfo r;
+			r.hdr = *(getHdr());
+
+			r.blkSizeMin = getU16(data+0);
+			r.blkSizeMax = getU16(data+2);
+
+			r.frmSizeMin = getU32(data+4) & bitmask(24);
+			r.frmSizeMax = getU32(data+7) & bitmask(24);
+
+			uint32_t tmp = getU32(data+10);
+			int nrSamplesLo = (tmp    ) & bitmask( 4);
+			r.bits			 = ((tmp>> 4) & bitmask( 5)) + 1;
+			r.nrChannels	 = ((tmp>> 9) & bitmask( 3)) + 1;
+			r.sampleRate     = (tmp>>12); // & bitmask(20);
+
+			//std::string bits = dec2bin(tmp);
+			//printf("tmp = %s\n", bits.c_str() );
+
+			int nrSamplesHi = getU32(data+14);
+			r.nrSamples = (nrSamplesHi<<4) + nrSamplesLo;
+
+			return r;
+		}
+
+	};
+
+
+	_align_pre_(1) struct stream {
+		char id[4];
+		blkStreamInfo2 streamInfo;
+	} _align_post_(1);
+
+	int parseHeader(FILE *f, fileInfo* info)
+	{
+		stream strm;
+
+		//check if structs are compiled correctly:
+		assert( sizeof(metadataBlock) == 4);
+
+		//fseek(f, 0, SEEK_SET);
+		fread( &strm, sizeof(strm), 1, f);
+
+		//check header:
+		if( memcmp( strm.id, "fLaC", 4) )
+			return -1;
+		if( strm.streamInfo.getHdr()->blockType != btSteamInfo)
+			return -2;
+
+		info->isAudioFile = true;
+
+		blkStreamInfo blkHdr = strm.streamInfo.parse();
+		info->nrBits = blkHdr.bits;
+		info->nrChannels = blkHdr.nrChannels;
+		info->sampleRate = blkHdr.sampleRate;
+
+		return 0;
+	}
+
 }
 
 
@@ -324,6 +481,15 @@ std::auto_ptr<fileInfo> getFileInfo(const char *fname)
 		//if(r == 0)	info->isAudioFile = true;
 		if( (r1>=0) || (r2>=0) )
 			info->isAudioFile = true;
+	}
+	else if( info->mime == "audio/flac" )
+	{
+		int r2 = tagID3v2(f, info->tags);
+		if( r2 > 0 )
+			fseek( f, r2, SEEK_SET);	//id3 found, seek to start of other data
+		else
+			fseek( f, 0 , SEEK_SET);	//nothing found, seek back
+		flac::parseHeader(f, info.get() );
 	}
 
 	fclose(f);

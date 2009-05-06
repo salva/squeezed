@@ -276,7 +276,8 @@ void slimPlayingMenu::draw(void)
 	const playList *list = display->slimConnection->ipc->getList( display->slimConnection->state.uuid );
 	int songNr    = list->currentItem;
 	int listSize  = list->items.size();
-	musicFile song =  list->items[ list->currentItem ] ;
+	musicFile song;
+	if( listSize > 0) song =  list->items[ list->currentItem ] ;
 
 	// Prepare strings to display:
 	int secTot = elapsed_ms/1000;

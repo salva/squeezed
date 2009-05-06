@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 10.00
 # Visual C++ Express 2008
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "squeezeD", "squeezeD.vcproj", "{0C2729DA-9AC1-49BC-A4FD-B7E46F34DD3A}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "squeezed", "squeezeD.vcproj", "{0C2729DA-9AC1-49BC-A4FD-B7E46F34DD3A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

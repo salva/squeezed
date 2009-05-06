@@ -10,6 +10,7 @@
 
 #include "slimProto.hpp"
 #include "slimDisplay.hpp"
+#include "slimIPC.hpp"
 #include "util.hpp"
 
 #include "debug.h"
@@ -622,7 +623,14 @@ void slimConnectionHandler::STRM()
 
 void slimConnectionHandler::play()
 {
-	menuPlayList->currentItem = ipc->getList( state.uuid )->currentItem;
+	int currentItem = ipc->getList( state.uuid )->currentItem;
+	menuPlayList->currentItem = currentItem;
+	musicFile data = ipc->getList( state.uuid )->get(  currentItem  );
+
+	stream.format = data.format;
+	stream.pcmChannels = data.nChannels + '0';
+	stream.setSampleSize( data.nBits );
+	stream.setSampleRate( data.sampleRate );
 
 	//TODO: use ipc-> commands, so all player in the current group start playing.
 	stream.command    = 's';	//start the stream
