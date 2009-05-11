@@ -242,7 +242,9 @@ class slimBrowseMenu;
 class slimSearchMenu;
 class slimPlayingMenu;
 class slimPlayListMenu;
+class slimVolumeScreen;
 class playList;
+
 
 
 /// Low-level slim-protocol handling
@@ -251,6 +253,7 @@ class slimConnectionHandler : public connectionHandler
 	//friend class slimScreen;
 	friend class slimPlayingMenu;
 	friend class slimPlayListMenu;	//need to change this...
+	friend class slimVolumeScreen;
 	friend class slimIPC;
 public:
 	slimIPC *ipc;		    ///< connection to the data-server
@@ -285,6 +288,7 @@ private:
 	slimBrowseMenu	*folderMenu;	//needs to be written
 	slimPlayingMenu	*nowPlayingScreen;
 	slimPlayListMenu *menuPlayList;
+	slimVolumeScreen *volumeScreen;
 
 	/// Connection state
 	struct state_s {
@@ -441,11 +445,8 @@ public:
     slimConnectionHandler(SOCKET socketFD, slimIPC *ipc);
     ~slimConnectionHandler();
 
-
-	void setMenu(slimScreen *newMenu)
-	{
-		state.currentScreen = newMenu;
-	}
+	/// set another menu, redraw the screen
+	void setMenu(slimScreen *newMenu, char transition = 'c' );
 
 	const std::string& currentGroup(void)
 	{

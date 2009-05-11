@@ -244,7 +244,15 @@ namespace path
 	}
 
 
-	std::vector<std::string> listdir(std::string path)
+	/// sorting criterium for filenames. TODO: directories first
+	static bool fnameLessThan( std::string a,  std::string b) 
+	{
+		std::transform(a.begin(), a.end(), a.begin(), toupper);
+		std::transform(b.begin(), b.end(), b.begin(), toupper);
+		return a < b;
+	}
+
+	std::vector<std::string> listdir(std::string path, bool doSort)
 	{
 		std::vector<std::string> files;	//file/directory names for each depth
 		struct dirent * de;
@@ -258,8 +266,13 @@ namespace path
 			if( de->d_name[0] != '.' )	//dont do ".", ".." and any hidden files
 				files.push_back( de->d_name );
 		}
-
 		closedir( dir );
+
+		if(doSort)
+		{
+			std::sort( files.begin(), files.end(), fnameLessThan );	// Sort case insensitive
+		}
+
 		return files;
 	}
 

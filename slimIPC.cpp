@@ -83,7 +83,7 @@ std::vector<musicFile> makeEntries(string url)
 	url = path::normalize(url);
 	if( path::isdir(url) )
 	{
-		std::vector<string> items = path::listdir( url );
+		std::vector<string> items = path::listdir( url , true );	//list files, sorted
 		for(size_t i=0; i< items.size(); i++)
 		{
 			string fullFname = path::join(url,items[i]);

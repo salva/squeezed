@@ -21,12 +21,19 @@ enum commands_e;		//slimProto includes this file.
 
 
 
-
 struct rect_t {
     int x1,x2;
     int y1,y2;
 };
 
+//--------------------------- Utility functions --------------------------
+
+/// key-handling for number-to-text conversion
+void keyPress(char key, string *text, bool *newSymbol);
+
+bool compareT9(char a, int number);
+
+extern const char *t9List[];
 
 
 
@@ -48,7 +55,6 @@ private:
 	// display is binary:
 	static const int bitBufSize = (screenWidth) * (screenHeight/8);
 	char packet[ 4 + bitBufSize ];	//full packet
-    //char *bitBuf;					//offset into packet
 
     displayState state;
 
@@ -72,7 +78,14 @@ public:
 
 
     /// Update screen, send to device
-    void draw(char transition='c');
+	/// transition codes (from softsqueeze source code)
+	///	'r','l':	full scroll, no parameters
+	/// 'u','d':	vertical scroll, over 'param' pixels
+	/// 'L','R':	small bump, no parameters
+	/// 'U','D':	small bump, no parameters
+	///	'c'		:   no transition
+    void draw(char transition='c', int8_t param=0);
+
 
     /// Clear screen
     void cls(bool send=false)
@@ -96,6 +109,52 @@ public:
             //    putPixel(x,y,color);
     }
 
+	//progress bar, progress ranges from 0..1
+	void progressBar(int x, int y, int len, bool horizontal, float progress)
+	{
+		//check input parameters:
+		const int thickness = 12;
+		const int border = 2;
+		len = util::max(len, 2*border);
+		progress = util::clip(progress, 0.f, 1.f );
+
+		rect_t b;
+		b.x1 = x;
+		b.x2 = horizontal ? x + len: x + thickness;
+		b.y1 = y;
+		b.y2 = horizontal ? y + thickness: y + len;
+		rect(b,1);	//clear background
+
+		//give it a rounded corner:
+		int corner[][2] = { {0,0},{0,1},{1,0} };
+		for( size_t i=0; i < array_size(corner); i++)
+		{
+			int dx = corner[i][0];
+			int dy = corner[i][1];
+			screen[ (b.y1+dy)  * screenWidth + b.x1 + dx  ] = 0;	//ul
+			screen[ (b.y1+dy)  * screenWidth + b.x2 - dx-1  ] = 0;	//ur
+			screen[ (b.y2-dy-1)* screenWidth + b.x1 + dx	] = 0;	//ll
+			screen[ (b.y2-dy-1)* screenWidth + b.x2 - dx-1 ] = 0;	//lr
+		}
+
+		//clear the 'remaining' area
+		int split = (int) ((float)(len-2*border)*progress + .5 );
+		if( horizontal )
+		{
+			b.x1 = x + split + border;
+			b.x2 = x + len   - border;
+			b.y1 = y + border;
+			b.y2 = y + thickness - border;
+		} else {
+			b.y1 = y + split + border;
+			b.y2 = y + len   - border;
+			b.x1 = x + border;
+			b.x2 = x + thickness - border;
+		}
+		rect(b, 0);
+
+	}
+
     /// Set cursor position
     void gotoxy(int x, int y)
     {
@@ -109,13 +168,6 @@ public:
 		x = util::clip(x, 0, screenWidth-1);
 		y = util::clip(y, 0, screenHeight-1);
 		screen[ y * screenWidth + x] = color;
-		/*int offset = (x<<2) + (y>>3);
-		int bit    = (y&7)^7;
-		if(color)
-            bitBuf[offset] |=  (1<<bit);
-        else
-            bitBuf[offset] &= (~(1<<bit));    //clear a pixel
-		*/
 	}
 
 	/// Get a single pixel
@@ -124,18 +176,13 @@ public:
 		x = util::clip(x, 0, screenWidth-1);
 		y = util::clip(y, 0, screenHeight-1);
 		return screen[ y * screenWidth + x];
-
-		/*int offset = (x<<2) + (y>>3);
-		int bit    = (y&7)^7;
-		char b     = bitBuf[offset] & (1<<bit);
-		return (b != 0);*/
 	}
 
 
-    void putChar(char c, bool send=false);
+    void putChar(char c, int fontsize = 11, bool send=false);
 
 	/// Print a string to the display
-    void print(const char *msg, bool send=false);
+    void print(const char *msg, int fontsize = 11, bool send=false);
 };
 
 
@@ -148,7 +195,7 @@ public:
 	slimScreen(slimDisplay *display): display(display)
 	{ }
 
-	virtual void draw(void)=0;
+	virtual void draw(char transition='c', int8_t param=0)=0;
 
 	virtual bool command(commands_e cmd)
 	{
@@ -181,29 +228,19 @@ private:
 	int fontSize;
 
 	/// Get current menu-item name
-	virtual string currentName(void)=0;
+	virtual string getName(size_t index)=0;
 	/// Get number of items in the menu
 	virtual size_t itemSize(void) = 0;
 	/// Run current menu
 	virtual void run(void) = 0;
 
-	/// Internal drawing function, with animation
-    virtual void draw(char transition)
-    {
-		char index[8];
-		sprintf(index, "%llu/%llu", (LLU)(currentItem+1), (LLU)itemSize() );
+	//make it possible to have a dynamic menu name:
+	virtual const string& getMenuName(void)
+	{
+		return menuName;	//per default, a static one
+	}
 
-		display->cls();
-		display->gotoxy( 0, 0); display->print( menuName.c_str() );
 
-		display->gotoxy( 320-8*strlen(index), 0 );
-		display->print(index);
-
-        string name = currentName();
-        display->gotoxy(window.x1, window.y1);
-        display->print( name.c_str() );
-        display->draw(transition);
-    }
 
 
 public:
@@ -221,44 +258,94 @@ public:
 	}
 
 	/// update screen
-	void draw(void)	{	draw('c');	}
+	//void draw(void)	{	draw('c');	}
+
+	/// Internal drawing function, with animation
+    void draw(char transition, int8_t param=0)
+    {
+		int fontSizes[] = {11,19}; //fontsizes, per line
+		char index[8];
+		sprintf(index, "%llu/%llu", (LLU)(currentItem+1), (LLU)itemSize() );
+
+		display->cls();
+		display->gotoxy( 0, 0); 
+		display->print( getMenuName().c_str() , fontSizes[0] );
+
+		display->gotoxy( 320-8*strlen(index), 0 );
+		display->print(index, fontSizes[0]);
+
+        string name = getName(currentItem);
+        display->gotoxy(window.x1, fontSizes[0] + 1);
+        display->print( name.c_str() ,  fontSizes[1] );
+
+		if(transition != 'c')
+			param = 32-fontSizes[0];	//depends on font size, so set it here
+        display->draw(transition, param);
+    }
 
 	/// process a user-control-command
     virtual bool command(commands_e cmd)
     {
         bool handled = true;
 		int newCurrent;
+	
+		//allow fast scrolling, by typing in first letter of the menu:
+		if( (cmd >= cmd_0) && (cmd <= cmd_9) )
+		{
+			string cName = getName(currentItem);
+			int keyNr = commandsStr[cmd][0] - '0';
+			cName.resize(1);	//make sure it has at leat one character.
+			if( compareT9(cName[0], keyNr) )
+			{
+				cmd = cmd_down;
+			} else {
+				//search first menu entry that matches the T9 code:
+				for(size_t i=0; i< itemSize(); i++)
+				{
+					string cName = getName(i);
+					cName.resize(1);
+					if( compareT9(cName[0], keyNr) )
+					{
+						currentItem = i;
+						draw('c');
+						break;
+					}
+				}
+			} //if compareT9
+		} //if cmd = 0..9
+
         switch(cmd)
         {
         case cmd_up:
-			newCurrent = util::max<int>(currentItem-1, 0 );
-			if(currentItem == (size_t)newCurrent)
-				draw('U');	//doesn't work yet. probably need to set parameters also...
-			else
-				draw('c');
-			currentItem = newCurrent;
-            break;
-        case cmd_down:
-			newCurrent = util::min<int>(currentItem+1, itemSize()-1 );
+			newCurrent = util::clip<int>(currentItem-1, 0, itemSize()-1);
 			if(currentItem == (size_t)newCurrent)
 				draw('D');
-			else
-				draw('c');
-			currentItem = newCurrent;
+			else {
+				currentItem = newCurrent;
+				draw('u');
+			}
+            break;
+        case cmd_down:
+			newCurrent = util::clip<int>(currentItem+1, 0, itemSize()-1 );
+			if(currentItem == (size_t)newCurrent)
+				draw('U');
+			else {
+				currentItem = newCurrent;
+				draw('d');
+			}
             break;
 		case cmd_left:
-			if( parentScreen != NULL)
-				display->slimConnection->setMenu( parentScreen );
-			handled = true;
+			if( parentScreen != NULL) {
+				display->slimConnection->setMenu( parentScreen , 'l');
+			} else
+				draw('L');	//bump left
 			break;
 		case cmd_right:
 			run();
-			handled = true;
 			break;
         default:
             handled = false;
         }
-		//hash++;	//force a screen update
         return handled;
 	} //command()
 };
@@ -288,7 +375,10 @@ private:
 		slimScreen	*subMenu;
 	public:
 		callbackSubMenu(slimConnectionHandler *c, slimScreen *s): connection(c), subMenu(s) {}
-		void run(void)	{	connection->setMenu(subMenu);}
+		void run(void)	
+		{	
+			connection->setMenu(subMenu, 'r' );
+		}
 	};
 
 	/// Storage for submenu callbacks
@@ -312,8 +402,13 @@ public:
 	}
 
 	/// Get current menu-item name
-	string currentName(void)
-	{	return items[currentItem].name;	}
+	string getName(size_t index)
+	{	
+		string name;
+		if( index < items.size() )
+			name = items[index].name;	
+		return name;
+	}
 
 	/// Get number of items in the menu
 	size_t itemSize(void)
@@ -321,7 +416,12 @@ public:
 
 	/// Run current menu
 	void run(void)
-	{	items[currentItem].action->run();	}
+	{	
+		if( items[currentItem].action != NULL )
+			items[currentItem].action->run();	
+		else
+			draw('R');
+	}
 };
 
 
@@ -368,9 +468,12 @@ public:
 
 
 	/// Get current menu-item name
-	string currentName(void)
+	string getName(size_t index)
 	{
-		return getName( getIterator(SEEK_SET) + currentItem );
+		string name;
+		if( index < itemSize() )
+			name = getName( getIterator(SEEK_SET) + index );
+		return name;
 	}
 
 	/// Get number of items in the menu
@@ -382,7 +485,8 @@ public:
 	/// Execute current menu-item
 	void run(void)
 	{
-		callback->run( getIterator(SEEK_SET) + currentItem );
+		if( currentItem < itemSize() )
+			callback->run( getIterator(SEEK_SET) + currentItem );
 	}
 
 };
@@ -415,7 +519,7 @@ private:
 			{
 				int newIndex = result - list->items.begin();
 				device->ipc->seekList( device->currentGroup() , newIndex, SEEK_SET);
-				device->setMenu( parent );
+				device->setMenu( parent , 'l');
 			}
 		}
 	};	//class listCallback
@@ -494,7 +598,7 @@ public:
 		this->playListBrowser = playListBrowser;
 	}
 
-	virtual void draw(void);
+	virtual void draw(char transition, int8_t param);
 
 	virtual bool command(commands_e cmd);
 };
@@ -542,7 +646,7 @@ public:
 		//mode = browseResults;
 	}
 
-	void draw(void);
+	virtual void draw(char transition, int8_t param);
 
 	bool command(commands_e cmd);
 };
@@ -550,19 +654,18 @@ public:
 
 
 /// Browse the file-system
-class slimBrowseMenu: public slimScreen
+class slimBrowseMenu  : public slimGenericMenu
 {
 private:
-	//musicDB *db;
+	//string menuName;
 	slimIPC *ipc;
-
 	string basePath;		//root of music directory
-	slimScreen *parentScreen;
-
+	
 	std::vector<string> subDirs;	//current subdir relative to base
-	std::vector<string> items;		//files in current dir
-	int itemsPos;			//position within the current directory
+	std::vector<std::string> items; //current menu items:
+	//size_t itemsPos;
 
+	//Helper functions:
 
 	string fullPath(void)
 	{
@@ -572,7 +675,7 @@ private:
 		return out;
 	}
 
-	//last part of the pathname:
+	//last part of the pathname
 	string lastPath(void)
 	{
 		if( subDirs.size() == 0)
@@ -590,32 +693,165 @@ private:
 
 	void setItems(std::string&  path )
 	{
-		items = path::listdir( path );
-		// Sort case insensitive:
-		std::sort( items.begin(), items.end(), stringLessThan );	
+		items = path::listdir( path , true );
+		//std::sort( items.begin(), items.end(), stringLessThan );	// Sort case insensitive
 	}
 
-
 public:
-	slimBrowseMenu(slimDisplay *display, slimScreen *parent ): slimScreen(display)
-	{
+    slimBrowseMenu(slimDisplay *display, string name, slimScreen *parent=NULL):
+					slimGenericMenu(display,name,parent)
+    {
 		basePath = display->slimConnection->ipc->db->getBasePath();
 		ipc = display->slimConnection->ipc;
-		itemsPos = 0;
-		parentScreen = parent;
+		currentItem = 0;
 
-		//get file listing:
 		setItems(  fullPath() );
 	}
 
 
-	void draw(void);
+	/// Get current menu-item name
+	string getName(size_t index)
+	{	
+		string name;
+		if( index < items.size() )
+			name = items[index];	
+		return name;
+	}
 
-	/// process a user-control-command
-    virtual bool command(commands_e cmd);
+	/// Get number of items in the menu
+	size_t itemSize(void)
+	{	return items.size();	}
+
+
+	/// Override key-handling with some special commands:
+	bool command(commands_e cmd)
+	{
+		string url;
+		if( items.size() > 0)
+			url = path::join(fullPath(), items[currentItem]);
+		else
+			url = fullPath();
+
+		bool handled = true;
+        switch(cmd)
+        {
+		case cmd_left:
+			{
+				if( subDirs.size() == 0) {
+					slimGenericMenu::command( cmd_left );
+				} else {
+					string dir = subDirs.back();
+					subDirs.pop_back();
+					setItems( fullPath() );
+					//find dir in files:
+					currentItem = 0;
+					for(size_t i=0; i< items.size(); i++)
+						if( dir == items[i] )
+							currentItem = i;
+					draw('l');
+				}
+				break;
+			}
+		case cmd_add:
+			{	//Add current file or dir to the end of the playlist
+				std::vector<musicFile> entries = makeEntries( url );
+				ipc->addToGroup( display->slimConnection->currentGroup(),  entries);
+				break;
+			}
+		case cmd_play:
+			{	//Replace the playlist, and issue a 'play' command to ipc
+				std::vector<musicFile> entries = makeEntries( url );
+				//only clear playlist if we really have something new:
+				if( entries.size() > 0)
+				{
+					ipc->setGroup( display->slimConnection->currentGroup(),  entries);
+					//and start playing:
+					ipc->seekList( display->slimConnection->currentGroup(), 0, SEEK_SET );
+				}
+				break;
+			}
+		default:
+			handled = slimGenericMenu::command(cmd);
+		}
+		return handled;
+	}
+
+	/// Run current menu
+	void run(void)
+	{
+		string url;
+		if( items.size() > currentItem)
+			url = path::join(fullPath(), items[currentItem] );
+		else
+			url = fullPath();
+
+		if( path::isdir( url  )  )
+		{
+			subDirs.push_back( items[currentItem] );
+			setItems( fullPath() );
+			currentItem = 0;
+			draw('r');
+		} else
+			draw('R');
+	}
 };
 
 
+class slimVolumeScreen: public slimScreen
+{
+private:
+	slimScreen *parent;
+	slimConnectionHandler::state_s *state;
+	const static int delta = 5;
+public:
+	slimVolumeScreen(slimDisplay *display): 
+		slimScreen(display),
+	    parent(NULL)
+	{ 
+		state = &display->slimConnection->state;
+	}
+
+	void draw(char transition='c', int8_t param=0)
+	{
+		float vol = display->slimConnection->state.volume;
+		char msg[32];
+		sprintf(msg,"Volume (%.0f)", vol);
+
+		display->cls();
+		display->print(msg);
+
+		int border = 20;
+		display->progressBar( border, 16, 320-2*border, true, vol/100.f);
+
+		display->draw(transition,param);
+	}
+
+	//since this is a popup, the parent can be set dynamically:
+	void setParent(slimScreen *newParent)
+	{
+		parent = newParent;
+	}
+
+	bool command(commands_e cmd)
+	{
+		bool handled = true;
+		if( cmd == cmd_Vup ) {
+			state->volume = util::clip(state->volume + delta, 0, 100);
+			display->slimConnection->setVolume(state->volume);
+		} else if( cmd == cmd_Vdown ) {
+			state->volume = util::clip(state->volume - delta, 0, 100);
+			display->slimConnection->setVolume(state->volume);
+		} else {
+			display->slimConnection->setMenu( parent );
+			handled = false;
+			//handled = parent->command( cmd );
+		}
+		draw();
+		return handled;
+	}
+};
+ 
+	
 /**@}
  *end of doxygen slim-group
  */

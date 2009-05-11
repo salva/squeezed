@@ -130,13 +130,14 @@ ipc(ipc)
 	mainMenu = new slimMenu(display, "Squeezebox Home");
 	state.currentScreen = mainMenu;
 
-	folderMenu		= new slimBrowseMenu(display, mainMenu);
+	folderMenu		= new slimBrowseMenu(display, "Folder", mainMenu);
 	nowPlayingScreen= new slimPlayingMenu(display, mainMenu);
 
 	searchMenu		= new slimMenu(display, "Search", mainMenu);
 	searchAlbum		= new slimSearchMenu(display, searchMenu, DB_ALBUM);
 	searchArtist	= new slimSearchMenu(display, searchMenu, DB_ARTIST);
 	menuPlayList	= new slimPlayListMenu(display, nowPlayingScreen);
+	volumeScreen    = new slimVolumeScreen(display);
 
 	searchMenu->addItem("Albums", searchAlbum);
 	searchMenu->addItem("Artist", searchArtist);
@@ -147,7 +148,7 @@ ipc(ipc)
 	mainMenu->addItem("Now Playing", nowPlayingScreen);
 	mainMenu->addItem("Folders",	folderMenu );
 	mainMenu->addItem("Search",		searchMenu );
-	mainMenu->addItem("Settings",	mainMenu );		//todo: write menu
+	mainMenu->addItem("Settings",	(slimGenericMenu::callback*) NULL );		//todo: write menu
 
 	//Some other data:
 	memset( &IRdata, 0, sizeof(IRdata) );
@@ -165,6 +166,12 @@ slimConnectionHandler::~slimConnectionHandler()
 	delete display;
 }
 
+
+void slimConnectionHandler::setMenu(slimScreen *newMenu, char transition)
+{
+	state.currentScreen = newMenu;
+	newMenu->draw(transition, 24 );
+}
 
 
 // This is were the network data comes in
@@ -319,8 +326,8 @@ void slimConnectionHandler::helo(netBuffer& buf, size_t len)
 
 	setBrightness(state.brightness);
 	//visualization(false, 0 ); //not complete yet
-	display->print("Welcome",true);
-	mainMenu->draw();
+	display->print("Welcome");
+	mainMenu->draw('c');
 
 
 	//init: stop all previous streams
@@ -395,8 +402,9 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 		//All other keys are handled by the current menu:
 		bool screenHandledIt = state.currentScreen->command(cmd);
 
-		if( !screenHandledIt )
-		{
+		if( screenHandledIt ) {
+			needsRedraw = false;
+		} else {
 			switch(cmd)
 			{
 				//menu system
@@ -430,12 +438,10 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 				this->ipc->seekList( state.currentGroup,  1, SEEK_CUR);
 				break;
 			case cmd_Vup:
-				state.volume = util::clip(state.volume + 10, 0, 100);
-				setVolume(state.volume);
-				break;
 			case cmd_Vdown:
-				state.volume = util::clip(state.volume - 10, 0, 100);
-				setVolume(state.volume);
+				volumeScreen->setParent( state.currentScreen );
+				state.currentScreen = this->volumeScreen;
+				volumeScreen->command(cmd);
 				break;
 
 				//others:
@@ -448,24 +454,22 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 				sprintf(str,"0 key %u = %s\n", code, commandsStr[cmd] );
 				display->gotoxy(0,0);
 				display->rect( win , 0);
-				display->print(str,false);
+				display->print(str);
 				break;
 			case cmd_invalid:
 				sprintf(str,"unknown code 0x%x\n", code );
 				display->gotoxy(0,0);
 				display->rect( win , 0);
-				display->print(str,false);
+				display->print(str);
 				break;
 			default:
-
-
 				sprintf(str,"key %u = %s\n", code, commandsStr[cmd] );
 				display->gotoxy(0,0);
 				display->rect( win , 0);
-				display->print(str,false);	//print, but don't send image data.
+				display->print(str);	//print, but don't send image data.
 				break;
 			}
-		} //if (!screenHandledIt)
+		} 
 
 		// Update here, for now. should be done more intelligently
 		if(needsRedraw)

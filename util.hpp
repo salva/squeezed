@@ -54,7 +54,7 @@ namespace util
 	}
 
 	/// helper function for sort()
-	template <class T>
+	/*template <class T>
 	static bool lessThan( T a, T b) 
 	{
 		return a < b;
@@ -65,7 +65,7 @@ namespace util
 	void sort( std::vector<T> &vec)
 	{
 		std::sort( vec.begin(), vec.end(), lessThan<T> );
-	}
+	}*/
 }
 
 
@@ -108,7 +108,7 @@ namespace path {
 	bool isfile(const std::string path);
 
 	/// List the contenst of a directory. in python, this is os.listdir()
-	std::vector<std::string> listdir(const std::string path);
+	std::vector<std::string> listdir(const std::string path, bool doSort=false);
 
 	/// Combine two strings into a single pathname.
 	std::string join(const std::string& p1, const std::string& p2);
