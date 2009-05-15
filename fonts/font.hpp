@@ -13,7 +13,7 @@ struct font_s {
 	/// returns the width of the character (in pixels)
 	int render(char *buffer, int bwidth, int bstride, char c) const
 	{
-		if( c > nrGlyphs)
+		if( c >= nrGlyphs)
 			return 0;
 
 		int nrBytes = offset[c+1] - offset[c];
@@ -35,6 +35,17 @@ struct font_s {
 			}
 		}
 		return cWidth;	//width in pixels
+	}
+
+
+	//width of a character, in bytes:
+	int width(char c) const
+	{
+		if( c >= nrGlyphs)
+			return 0;
+		int nrBytes = offset[c+1] - offset[c];
+		int aHeight = ((height-1)>>3) + 1;	//aligned height, in bytes
+		return nrBytes / aHeight;
 	}
 };
 

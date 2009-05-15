@@ -22,12 +22,14 @@ struct fileInfo
 	//audio info (needed by slim, for non-mp3 files):
 	int nrBits;
 	int nrChannels;
-	int sampleRate;		// Samples per second
+	int sampleRate;		///< Samples per second
+	int length;			///< Music length, in seconds
 
 	std::map< std::string, std::string> tags;	//possible tags
 
 	fileInfo(): isAudioFile(0),
-				nrBits(0), nrChannels(0), sampleRate(0)
+				nrBits(0), nrChannels(0), sampleRate(0),
+				length(0)
 	{ }
 };
 
@@ -36,6 +38,7 @@ struct fileInfo
 //Get mime type, based on the extension of a filename
 std::string getMime(const char *extension);
 
-std::auto_ptr<fileInfo> getFileInfo(const char *fname);
+//std::auto_ptr<fileInfo> 
+void getFileInfo(const char *fname, fileInfo& info);
 
 #endif

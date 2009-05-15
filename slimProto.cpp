@@ -169,8 +169,9 @@ slimConnectionHandler::~slimConnectionHandler()
 
 void slimConnectionHandler::setMenu(slimScreen *newMenu, char transition)
 {
+	if( state.currentScreen != newMenu)
+		newMenu->draw(transition, 24 );
 	state.currentScreen = newMenu;
-	newMenu->draw(transition, 24 );
 }
 
 
@@ -259,7 +260,10 @@ bool slimConnectionHandler::parseInput(uint32_t opU32, netBuffer& buf, int len )
 	case slimOpCode('R','E','S','P'):
 		resp(buf,len);	break;
 	case slimOpCode('A','N','I','C'):
-		db_printf(3,"< Animation complete\n");
+		state.anim = state_s::ANIM_NONE;
+		if( display->refreshAfterAnim )
+			display->draw('c');	//update screen, if required
+		//db_printf(3,"< Animation complete\n");
 		break;
 	default:
 		//debug:
@@ -386,7 +390,18 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 	uint32_t dt = timeOn - IRdata.prevTime;   //let it underflow on purpose
 	//TODO:  enable key-repeat, if it is hold for a longer time.
 
-	if( (code == IRdata.prevCode) && (dt < 200) )
+	//Volume keys are handled specially, for quick response:
+	if( (cmd == cmd_Vup) || (cmd == cmd_Vdown) )
+	{
+		if( state.currentScreen != this->volumeScreen)
+		{
+			volumeScreen->setParent( state.currentScreen );
+			state.currentScreen = this->volumeScreen;
+		}
+		volumeScreen->command(cmd);
+		//break;
+	} 
+	else if( (code == IRdata.prevCode) && (dt < 200) )
 	{
 		//double key-press
 	}
@@ -437,12 +452,7 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 			case cmd_forward:
 				this->ipc->seekList( state.currentGroup,  1, SEEK_CUR);
 				break;
-			case cmd_Vup:
-			case cmd_Vdown:
-				volumeScreen->setParent( state.currentScreen );
-				state.currentScreen = this->volumeScreen;
-				volumeScreen->command(cmd);
-				break;
+
 
 				//others:
 			case cmd_brightness:

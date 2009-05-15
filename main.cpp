@@ -1,16 +1,11 @@
 
-#include "configParser.hpp"
 
+//must include server first, since it uses winsock under win32:
 #include "serverShoutCast.hpp"
+#include "configParser.hpp"
 #include "musicDB.hpp"
 
-
-
-#if defined(WIN32) && !defined(__CYGWIN__)
-#include "pthread.h"
-#else
 #include <pthread.h>
-#endif
 
 
 //#if defined(WIN32)
@@ -46,13 +41,14 @@ void testDB(void)
 	configParser config(configFile);
 	string dbPath = config.getset("musicDB", "path", "." );	//path to music files
 	string dbFile = config.getset("musicDB", "dbFile", "SqueezeD.db");
+	string dbIdx  = config.getset("musicDB", "dbIdx", "SqueezeD.idx");
 	config.write(configFile);
 
 	musicDB db( dbPath.c_str() );
 	db.scan( dbFile.c_str() );
 	printf("scanning: found %llu items\n", (LLU)(db.size()) );
 
-	db.index();
+	db.index( dbIdx.c_str() );
 
 	//make a test query:
 	char match[] = "t";
@@ -68,7 +64,8 @@ void testShout(void)
 	//load configuration:
 	configParser config(configFile);
 	string dbPath = config.getset("musicDB", "path", "." );	//path to music files
-	string dbFile = config.getset("musicDB", "dbFile", "SqueezeD.db");
+	string dbFile = config.getset("musicDB", "dbFile", "SqueezeD.db" );
+	string dbIdx  = config.getset("musicDB", "dbIdx",  "SqueezeD.idx");
 	int shoutPort	= config.getset("shout", "port", 9000 );
 	int shoutConn	= config.getset("shout", "maxConnections", 10 );
 	int slimPort	= config.getset("slim",	 "port", 3483);
@@ -81,7 +78,7 @@ void testShout(void)
 	musicDB db( dbPath.c_str() );
 	db.scan( dbFile.c_str() );
 	printf("scanning: found %llu items\n", (LLU)db.size() );
-	db.index();
+	db.index( dbIdx.c_str() );
 
 	// Initialize servers
 	slimIPC			ipc(&db, &config);
@@ -96,7 +93,7 @@ void testShout(void)
 void testFlac(void)
 {
 	const char fname[] = "test.flac";
-	std::auto_ptr<fileInfo> fInfo = getFileInfo(fname );
+	//std::auto_ptr<fileInfo> fInfo = getFileInfo(fname );
 	int dummy=1;
 }
 
@@ -130,11 +127,17 @@ void startThreads()
 	musicDB db( dbPath.c_str() );
 
 	// only scan if index is missing
+	int loadResult = -1;
 	if( !path::isfile( dbFile ) )
 		db.scan(dbFile.c_str() );
 	else
-		db.load(dbFile.c_str() , dbIdx.c_str() );
-	db.index();
+		loadResult = db.load(dbFile.c_str() , dbIdx.c_str() );
+	
+	if( loadResult < 0 ) 
+	{
+		db_printf(1,"Sorting results\n");
+		db.index( dbIdx.c_str() );
+	}
 	db_printf(1,"found %llu files\n", (LLU)db.size() );
 
 	//Both shout- and slim-server need to share some info.
@@ -162,6 +165,7 @@ void startThreads()
 	//wait for the thread to finish:
 	pthread_join(thread, NULL);
 }
+
 
 
 

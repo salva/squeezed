@@ -118,15 +118,44 @@ void slimDisplay::draw(char transition, int8_t param)
 		}
 	}
 
-	slimConnection->send("grfe", sizeof(packet), packet);
+	
+	if( transition != 'c') 
+	{
+		//new animations override old ones:
+		refreshAfterAnim = false;
+		slimConnection->state.anim = slimConnectionHandler::state_s::ANIM_HW;
+		slimConnection->send("grfe", sizeof(packet), packet);
+	}
+	else 
+	{
+		//don't update if animation is running
+		if( slimConnection->state.anim != slimConnectionHandler::state_s::ANIM_HW) 
+		{
+			refreshAfterAnim = false;	//just send something, no refresh needed
+			slimConnection->send("grfe", sizeof(packet), packet);
+		} else
+			refreshAfterAnim = true;	//send it after animation has completed
+	}
 }
 
 
 
-void slimDisplay::putChar(char c, int fontsize, bool send)
+int slimDisplay::strWidth(const char *msg, int fontsize)
 {
 	if( (size_t)fontsize >= array_size(fontPerSize) )
-		return;
+		return 0;
+	const font_s *font = fontPerSize[ fontsize ];
+	int width = 0;
+	while( *msg != 0)
+		width += font->width( *(msg++) );
+	return width;
+}
+
+
+int slimDisplay::putChar(char c, int fontsize, bool send)
+{
+	if( (size_t)fontsize >= array_size(fontPerSize) )
+		return 0;
 
 	const font_s *font = fontPerSize[ fontsize ];
 
@@ -148,15 +177,18 @@ void slimDisplay::putChar(char c, int fontsize, bool send)
 	*/
 
 	if(send) draw();
+	return width;
 }
 
 
 
-void slimDisplay::print(const char *msg, int fontSize, bool send)
+int slimDisplay::print(const char *msg, int fontSize, bool send)
 {
+	int width = 0;
 	while( *msg != 0)
-		putChar(*(msg++) , fontSize );
+		width += putChar(*(msg++) , fontSize );
 	if(send) draw();
+	return width;
 }
 
 
@@ -339,13 +371,25 @@ void slimSearchMenu::draw(char transition, int8_t param)
 
 			display->gotoxy(0,0);
 			display->print( title, fontSizes[0] );
-			display->gotoxy(9, fontSizes[0] + 1 );
-			display->print(  match.c_str(), fontSizes[1] );
-			int yBot = fontSizes[0] + fontSizes[1] + 1;
+
+			int xw,xl = 9;
+			display->gotoxy(xl, fontSizes[0] + 1 );
+			xw = display->print(  match.c_str(), fontSizes[1] );
 			//Print cursor
-			int x0 = 9 + 8*(match.size() + newSymbol);
-			for(int dx = -8; dx < 0; dx++)
-				display->putPixel( x0 + dx, yBot, 1);
+			//int x0 = 9 + 8*(match.size() + newSymbol);
+			int x0,x1;
+			int yBot = fontSizes[0] + fontSizes[1] + 1;
+			if( newSymbol ) {
+				char c[] = "a";
+				x0 = xl + xw;
+				x1 = x0 + display->strWidth(c, fontSizes[1] );	
+			} else {
+				const char *c = match.c_str() + match.size() -1;
+				x1 = xl + xw;
+				x0 = x1 - display->strWidth(c, fontSizes[1] );
+			}
+			for(int x = x0; x < x1; x++)
+				display->putPixel( x, yBot, 1);
 			break;
 		}
 	case fieldSelect:
@@ -355,18 +399,21 @@ void slimSearchMenu::draw(char transition, int8_t param)
 			dbQuery *result = &query.back();
 			dbField field   = result->getField();
 			sprintf(title, "%s `%s*' (%lli matches)", dbFieldStr[field], match.c_str(), (LLU)result->uCount(resultCursor) );
+
 			display->gotoxy(0,0);
-			display->print( title );
+			display->print( title, fontSizes[0] );
 
 			sprintf(title, "%i of %llu", resultCursor+1, (LLU)result->uSize() );
-			display->gotoxy( 320 - 8*strlen(title), 0 );
-			display->print( title );
+			int strLen = display->strWidth(title, fontSizes[1] );
 
-			display->gotoxy(20, 8);
+			display->gotoxy( 320 - strLen, 0 );
+			display->print( title, fontSizes[0] );
+
+			display->gotoxy(20, fontSizes[0] + 1 );
 			//int offset = resultCursor;
 			dbEntry res = (*db)[ result->uIndex(resultCursor) ];
 			string val = res.getField(field);
-			display->print( val.c_str() );
+			display->print( val.c_str() , fontSizes[1] );
 			break;
 		}
 	}
@@ -374,5 +421,5 @@ void slimSearchMenu::draw(char transition, int8_t param)
 }
 
 
-//--------------------- file browser menu -------------------
-
+//--------------------- volume control -------------------
+const float slimVolumeScreen::timeOut = 3.5;

@@ -22,21 +22,24 @@ musicFile::musicFile(void)
 
 musicFile::musicFile(const char *fname, uint16_t port)
 {
-	std::auto_ptr<fileInfo> finfo = getFileInfo(fname);
-	if( finfo->isAudioFile )
+	//std::auto_ptr<fileInfo> finfo = getFileInfo(fname);
+	fileInfo finfo;
+	getFileInfo(fname, finfo);
+
+	if( finfo.isAudioFile )
 	{
-		title  = finfo->tags["title"];
-		artist = finfo->tags["artist"];
-		album  = finfo->tags["album"];
+		title  = finfo.tags["title"];
+		artist = finfo.tags["artist"];
+		album  = finfo.tags["album"];
 
 		format = '?';
-		if( finfo->mime == "audio/mpeg")
+		if( finfo.mime == "audio/mpeg")
 			format = 'm';
-		if( finfo->mime == "audio/flac")
+		if( finfo.mime == "audio/flac")
 			format = 'f';
-		nChannels	= finfo->nrChannels;
-		nBits		= finfo->nrBits;
-		sampleRate	= finfo->sampleRate;
+		nChannels	= finfo.nrChannels;
+		nBits		= finfo.nrBits;
+		sampleRate	= finfo.sampleRate;
 
 		url			= fname;
 		ip			= 0;	//localhost

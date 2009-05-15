@@ -222,7 +222,7 @@ namespace path
 	{
 		std::string out;
 		if( p1.length() == 0)
-			out =  p2;
+			out = p2;
 		else if( p2.length() == 0)
 			out = p1;
 		else
@@ -254,7 +254,8 @@ namespace path
 
 	std::vector<std::string> listdir(std::string path, bool doSort)
 	{
-		std::vector<std::string> files;	//file/directory names for each depth
+		std::vector<std::string> files;	//file names for each depth
+		std::vector<std::string> dirs;  //keep directories separate, so they are on top in the result
 		struct dirent * de;
 
 		DIR *dir =  opendir( path.c_str() );
@@ -264,16 +265,23 @@ namespace path
 		while( (de=readdir(dir)) )
 		{
 			if( de->d_name[0] != '.' )	//dont do ".", ".." and any hidden files
-				files.push_back( de->d_name );
+			{
+				if( (de->d_type & DT_DIR)!=0 )
+					dirs.push_back( de->d_name );
+				else
+					files.push_back( de->d_name );
+			}
 		}
 		closedir( dir );
 
 		if(doSort)
 		{
 			std::sort( files.begin(), files.end(), fnameLessThan );	// Sort case insensitive
+			std::sort( dirs.begin(), dirs.end(), fnameLessThan );
 		}
+		dirs.insert( dirs.end(), files.begin(), files.end() );
 
-		return files;
+		return dirs;
 	}
 
 

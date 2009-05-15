@@ -169,10 +169,10 @@ public:
 	void scan(const char *dbName = "SqueezeD.db");
 
 	/// Create sorted indices for the datasets, store the to disk
-	void index(void);
+	void index(const char *idxName);
 
 	/// Load an existing database from file
-	void load(const char *dbName, const char *idxName);
+	int load(const char *dbName, const char *idxName);
 
 	size_t size(void) {return nrEntries; }
 

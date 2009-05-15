@@ -255,6 +255,7 @@ class slimConnectionHandler : public connectionHandler
 	friend class slimPlayListMenu;	//need to change this...
 	friend class slimVolumeScreen;
 	friend class slimIPC;
+	friend class slimDisplay;
 public:
 	slimIPC *ipc;		    ///< connection to the data-server
 
@@ -268,15 +269,12 @@ private:
 			{};	//initialize to zero
 	} rxBuf;
 
-    bool    doStop;     ///< signal to stop the server
 
 	/// IR/keyboard status
     struct {
         uint32_t prevCode;
         uint32_t prevTime;
     } IRdata;
-
-    uint32_t lastIR;
 
 
 
@@ -292,9 +290,10 @@ private:
 
 	/// Connection state
 	struct state_s {
-		std::string		currentGroup;
-		slimScreen		*currentScreen;
-		char			uuid[18];		//unique device identifier
+		std::string		currentGroup;	///< Current playlist
+		slimScreen		*currentScreen;	///< Current visible menu
+		char			uuid[18];		///< unique device identifier
+		enum anim_e {ANIM_NONE, ANIM_HW, ANIM_SW} anim;	//animation stat
 
 		char			volume;
 		char			brightness;
@@ -305,7 +304,8 @@ private:
 					currentScreen(NULL),	//this doens't work if mainMenu isn't initialized
 					volume(90),
 					brightness(3),
-					playState(PL_STOP)
+					playState(PL_STOP),
+					anim(ANIM_NONE)
 		{ }
 	} state;
 
@@ -332,7 +332,7 @@ private:
 		/*uint16_t visport;   //default 0;
         uint32_t visip;     //default 0;*/
         uint16_t serverPort;	// default 9000
-        uint32_t serverIP;		// 0 implies control server
+        uint32_t serverIP;		// 0 implies control server, 1 means squeezenetwork?
 
 		void setSampleSize(int nrBits)
 		{
@@ -409,8 +409,8 @@ protected:
         char        revision;
         uint8_t     mac[6];
         uint8_t     uuid[16];
-        uint16_t    channels;  //wlan channels
-        uint64_t    recv;      //number of data-sream bytes received
+        uint16_t    channels;		//wlan channels
+        uint64_t    recv;			//number of data-stream bytes received
         char        lang[2];
         char        capabilities[64];  //optional, only for newer devices.
 		bool		hasGraphics;
@@ -422,16 +422,16 @@ protected:
     struct {
         uint32_t eventCode;
         uint8_t  nrCrLF;
-        uint8_t  masInit;  //'m' or 'p'
+        uint8_t  masInit;	//'m' or 'p'
         uint8_t  masMode;
-        uint32_t bufSize;  //player buffer size
-        uint32_t bufData;  //bytes in player buffer
-        uint64_t nrRecv;   //# bytes received
-        uint16_t signal;  //wireless signal strength
+        uint32_t bufSize;	//player buffer size
+        uint32_t bufData;	//bytes in player buffer
+        uint64_t nrRecv;	//# bytes received
+        uint16_t signal;	//wireless signal strength
         uint32_t jiffies;   //player timestamp
-        uint32_t bufSizeOut;    //output buffer size
-        uint32_t bufDataOut;    //output data in buffer
-        uint32_t songMSec;       //elapsed millise seconds of current stream
+        uint32_t bufSizeOut;	///< Output buffer size
+        uint32_t bufDataOut;    ///< Output data in buffer
+        uint32_t songMSec;      ///< Elapsed millise seconds of current stream
         uint16_t voltage;
     } status;
 

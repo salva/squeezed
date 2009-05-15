@@ -102,11 +102,14 @@ void listdirRecursive( const std::string& basePath,
 					   const std::string& relPath,
 					   std::list<dbEntry>& lstFound)
 {
-	std::auto_ptr<fileInfo> fInfo;
-	std::string sStartDir =  path::join(basePath, relPath);
+	//std::auto_ptr<fileInfo> fInfo;
+
+	std::string sStartDir = path::join(basePath, relPath);
 	DIR* pDir = opendir ( sStartDir.c_str ());
 	if (!pDir)
 		return;
+
+	printf("listdirRecursive(): %s\n", pDir);
 
 	dirent* pEntry;
 	while ( (pEntry = readdir(pDir)) )
@@ -125,14 +128,16 @@ void listdirRecursive( const std::string& basePath,
 		}
 		if( !(isDir) )
 		{
-			fInfo = getFileInfo( fullEntry.c_str() );
+			fileInfo fInfo;
+			getFileInfo( fullEntry.c_str(), fInfo );
 
-			if( fInfo->isAudioFile) {
-				dbEntry entry(relPath, string(pEntry->d_name), fInfo.get() );
+			if( fInfo.isAudioFile) {
+				dbEntry entry(relPath, string(pEntry->d_name), &fInfo );
 				lstFound.push_back( entry );
-				db_printf(50,"%-30s: %s - %s, year %s\n", fInfo->url.c_str(),
-						fInfo->tags["artist"].c_str(), fInfo->tags["title"].c_str(), fInfo->tags["year"].c_str() );
-			} else {
+				//db_printf(50,"%-30s: %s - %s, year %s\n", fInfo.url.c_str(), fInfo.tags["artist"].c_str(), fInfo.tags["title"].c_str(), fInfo.tags["year"].c_str() );
+			} 
+			else 
+			{
 				db_printf(5,"%-30s: invalid\n", pEntry->d_name);
 			}
 		}
@@ -212,6 +217,7 @@ void musicDB::scan(const char *dbName)
 
 	// Make the db ready for usage
 	this->nrEntries = dynOffset.size();
+	printf(" musicDB::scan(): found %llu entries\n", (LLU)nrEntries);
 
 	this->offset.resize(nrEntries); // = new uint32_t[ nrEntries ];
 	for(size_t i=0; i< nrEntries; i++)
@@ -222,7 +228,7 @@ void musicDB::scan(const char *dbName)
 
 
 //
-void musicDB::load(const char *dbName, const char *idxName)
+int musicDB::load(const char *dbName, const char *idxName)
 {
 	vector<uint32_t> dynOffset;		//offset into f_db, per entry
 
@@ -239,15 +245,57 @@ void musicDB::load(const char *dbName, const char *idxName)
 	this->offset.resize(nrEntries); // = new uint32_t[ nrEntries ];
 	for(size_t i=0; i< nrEntries; i++)
 		this->offset[i] = dynOffset[i];
+
+
+	// Load the sorted indices:
+	FILE *f_idx= fopen(idxName, "rb");	//file with sorted indices into data
+	uint32_t nrItems32 = NULL;
+
+	//	first store header: number of entries, and an index into fdb:
+	if( f_idx == NULL)
+		return -1;
+
+	fread( &nrItems32, sizeof(nrItems32), 1, f_idx);
+	if( nrItems32 != nrEntries)
+	{
+		printf("invalid index file, it has %lu instead of %llu entries\n", nrItems32, (LLU)nrEntries);
+		fclose(f_idx);
+		return -2;
+	}
+
+	//for now: verify this, instead of just loading it:
+	uint32_t off;
+	for(size_t i = 0; i< nrEntries; i++)
+	{
+		fread( &off, sizeof(uint32_t), 1, f_idx);
+		if( offset[i] != off )
+		{
+			fclose(f_idx);
+			printf("offset[%i] is %i instead of %i\n", (LLU)i, off, offset[i]);
+			fclose(f_idx);
+			return -3;
+		}
+	}
+
+	// Read sorted tables
+	for(int table=0; table < IDX_END-1; table++)
+	{
+		idx[table].resize(nrEntries);
+		for(size_t i=0; i< nrEntries; i++)
+			fread( &idx[table][i], 1, sizeof(uint32_t), f_idx);
+	}
+
+	// cleanup:
+	fclose(f_idx);
+
+	return nrEntries;
 }
 
 
 
 // Create sorted indices for the datasets, store the to disk
-void musicDB::index(void)
+void musicDB::index(const char *idxName)
 {
-	const char idName[] = "SqueezeD.idx";
-
 	//initialize a temporary index:
 	vector<uint32_t> tidx;
 	tidx.resize( nrEntries );
@@ -287,7 +335,7 @@ void musicDB::index(void)
 
 
 	//Write to disk:
-	FILE *f_idx= fopen(idName, "wb");	//file with sorted indices into data
+	FILE *f_idx= fopen(idxName, "wb");	//file with sorted indices into data
 
 	//	first store header: number of entries, and an index into fdb:
 	uint32_t nrItems32 = nrEntries;
@@ -451,7 +499,7 @@ dbQuery::dbQuery(musicDB *db, dbField field, const char *match):
 		}
 
 		db_printf(5,"found %lli items for key %s, match '%s'. %lli unique\n", (long long)(itEnd-itBegin), dbFieldStr[field], match, (long long)(uniqueIdx.size()) );
-		if( ilen < 80 )
+		if( ilen < 20 )
 		{
 			for(std::vector<uint32_t>::iterator it=itBegin; it != itEnd; it++)
 			{

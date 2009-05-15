@@ -507,15 +507,23 @@ void printCinitializer(FILE *dst, size_t len, char *data)
 {
 	fprintf(dst, "{ ");
 	for(size_t i=0; i < len; i++)
+	{
 		fprintf(dst,"%i, ", data[i] );
+		if(i%20 == 19)
+			fprintf(dst,"\n");
+	}
 	fprintf(dst,"}");
 }
 
 void printCinitializer(FILE *dst, size_t len, unsigned short *data)
 {
 	fprintf(dst, "{ ");
-	for(size_t i=0; i < len; i++)
+	for(size_t i=0; i < len; i++) 
+	{
 		fprintf(dst,"%u, ", data[i] );
+		if(i%20 == 19)
+			fprintf(dst,"\n");
+	}
 	fprintf(dst,"}");
 }
 

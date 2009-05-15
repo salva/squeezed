@@ -12,6 +12,7 @@
 
 #include <vector>
 #include <string>
+#include <time.h>
 
 #include "debug.h"
 
@@ -41,8 +42,11 @@ extern const char *t9List[];
 class slimDisplay
 {
 public:
-    enum displayState {dOff, dTime, dMenu, dWPS};
+    //enum displayState {dOff, dTime, dMenu, dWPS};
     slimConnectionHandler* slimConnection;
+
+    //displayState state;
+	bool refreshAfterAnim;
 
 private:
     //bit buffer:
@@ -56,7 +60,7 @@ private:
 	static const int bitBufSize = (screenWidth) * (screenHeight/8);
 	char packet[ 4 + bitBufSize ];	//full packet
 
-    displayState state;
+
 
     /// Cursor position, relative to window
     struct {
@@ -71,7 +75,7 @@ public:
     {
         this->slimConnection = slimConnection;
 		//bitBuf = &packet[4];	//first 4 bytes are header
-        state = dOff;
+        //state = dOff;
         cls(false);
         gotoxy(0,0);
     }
@@ -179,10 +183,14 @@ public:
 	}
 
 
-    void putChar(char c, int fontsize = 11, bool send=false);
+	/// get width of a string
+	int strWidth(const char *str, int fontsize = 11);
 
-	/// Print a string to the display
-    void print(const char *msg, int fontsize = 11, bool send=false);
+	/// print character to screen, returns width in pixels of c
+    int putChar(char c, int fontsize = 11, bool send=false);
+
+	/// Print a string to the display, return width in pixels of *msg
+    int print(const char *msg, int fontsize = 11, bool send=false);
 };
 
 
@@ -554,7 +562,7 @@ public:
 		const playList *list = device->ipc->getList( device->uuid() );
 		string displayName;
 		if( it != list->end() )
-			displayName = it->title + "(" + it->artist + ")";
+			displayName = it->title + " (" + it->artist + ")";
 		return displayName;
 	}
 
@@ -802,19 +810,31 @@ class slimVolumeScreen: public slimScreen
 private:
 	slimScreen *parent;
 	slimConnectionHandler::state_s *state;
-	const static int delta = 5;
+	const static int delta = 2;
+
+	static const float timeOut; ///< time-out in seconds, after which this menu disappears
+	time_t	startTime;
 public:
 	slimVolumeScreen(slimDisplay *display): 
 		slimScreen(display),
 	    parent(NULL)
 	{ 
 		state = &display->slimConnection->state;
+		startTime = time(NULL);
 	}
 
 	void draw(char transition='c', int8_t param=0)
 	{
 		float vol = display->slimConnection->state.volume;
 		char msg[32];
+
+		if( difftime(time(NULL), startTime) > timeOut)
+		{
+			display->slimConnection->setMenu( parent );
+			display->draw('c');	//force screen update
+			return;
+		}
+
 		sprintf(msg,"Volume (%.0f)", vol);
 
 		display->cls();
@@ -830,11 +850,13 @@ public:
 	void setParent(slimScreen *newParent)
 	{
 		parent = newParent;
+		startTime = time(NULL);		//reset timeout counter
 	}
 
 	bool command(commands_e cmd)
 	{
 		bool handled = true;
+		startTime = time(NULL);		//reset timeout counter
 		if( cmd == cmd_Vup ) {
 			state->volume = util::clip(state->volume + delta, 0, 100);
 			display->slimConnection->setVolume(state->volume);
@@ -851,7 +873,7 @@ public:
 	}
 };
  
-	
+
 /**@}
  *end of doxygen slim-group
  */

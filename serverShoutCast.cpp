@@ -128,34 +128,25 @@ class nbuffer::buffer *shoutConnectionHandler::handleVFS(const char* request, co
 		// Generate directory listing:
 		std::string html;
 		std::vector<std::map<std::string,std::string> > dirList;
-		DIR * dir = opendir( fullPath.c_str() );
-		struct dirent * de;
 
-		if( dir )
+		std::vector<std::string> files = path::listdir( fullPath , true );	//generate sorted file-list
+		std::map<std::string,std::string> fileProps;
+
+		for(size_t i=0; i<files.size(); i++)
 		{
-		    de=readdir(dir);
-			while( de )
+			std::string mime,fullName =  path::join(fullPath, files[i]);
+			if( path::isdir(  fullName ) ) 
 			{
-				std::string mime,name(de->d_name);
-				std::string fullName =  path::join(fullPath,name);
-
-				std::map<std::string,std::string> fileProps;
-				//append trailing slash to directories:
-				if( path::isdir(  fullName ) ) {
-					name.push_back('/');
-					mime = "directory";
-				} else
-					mime = getMime( strrchr(name.c_str(),'.') );
-				fileProps["name"] = name;
-				fileProps["mime"] = mime;
-				dirList.push_back( fileProps );
-
-				de=readdir(dir);
+				files[i].push_back('/');				//append trailing slash to directories:
+				mime = "directory";
+			} else {
+				mime = getMime( strrchr(files[i].c_str(),'.') );
 			}
-			closedir( dir );
-			html = htmlFileList(dirList, relStr );	//generate list with relative pathnames
+			fileProps["name"] = files[i];
+			fileProps["mime"] = mime;
+			dirList.push_back( fileProps );
 		}
-
+		html = htmlFileList(dirList, relStr );	//generate list with relative pathnames
 		sendHeader("text/html");
 		outBuf = new nbuffer::bufferString( html );
 	}

@@ -27,6 +27,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
+#include <bitset>	//for mpeg header
 
 #include "debug.h"
 #include "util.hpp"
@@ -169,8 +170,8 @@ std::string utf16_to_char(char *data, size_t len)
 
 
 /// extract ID3v2 tags
-/// TODO: unsynchronization is not yet supported
-/// TODO: unicode strings are not yet supported.
+/// TODO: unicode strings are not nicely
+/// returns size of the header, in bytes, or <0 on error
 int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 {
 	_align_pre_(1) struct {
@@ -207,10 +208,13 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 
 
 	fseek( f, 0, SEEK_SET);
+	hdr.size = 0;
 	size_t n = fread( &hdr, 10, 1, f);
-	//if(n != 1) return -1;
+	if(n != 1) return -1;
 
+	//printf("raw size: %llx\n", (LLU) hdr.size);
 	hdr.size = ID3size( hdr.size );
+	//printf("ID3 size: %llx\n", (LLU) hdr.size);
 
 	//check for ID3 tag:
 	if( memcmp( hdr.ID, "ID3", 3)  )
@@ -259,7 +263,8 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 	}
 
 
-	while( fpos < unSyncLength )
+	//printf("hdr.size = %llu, unSyncLength: %llu\n", (LLU) hdr.size, (LLU) unSyncLength);
+	while( fpos < unSyncLength-5 )	//make sure the whole frame->size is valid
 	{
 		std::string text;
 
@@ -270,15 +275,23 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 
 		fpos += 10 + frame->size;
 
+		/*{
+			char IDstr[] = {0,0,0 ,0,0};
+			memcpy( IDstr, frame->ID, 4);
+			printf("fpos %i, ID %s, size %u\n", fpos, IDstr, frame->size);
+		}*/
+
 		if( frame->data[0] > 0x20)			//ISO-8859-1, 1 byte
 			text.assign(frame->data  , frame->size  );
 		else if( frame->data[0] == 0)		//ISO-8859-1, 1 byte, zero terminated
 			text.assign(frame->data+1, frame->size-1);		//also 1-byte encoding
 		else if( frame->data[0] == 1)		//UTF-16, unicode, zero-terminated
 		{
+			
 			//std::wstring wtext = std::wstring((wchar_t*)(frame->data+3), (frame->size-3)/2); //unicode
 			//text.resize( wtext.length() );
-			text = utf16_to_char( frame->data+3, frame->size-3 );
+			if(frame->size > 3)
+				text = utf16_to_char( frame->data+3, frame->size-3 );
 			db_printf(15,"frame %s, text = '%s'\n", frame->ID, text.c_str() );
 			//std::copy(wtext.begin(), wtext.end(), text.begin() );
 		}
@@ -301,6 +314,8 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 				break;
 			}
 	} //while (hdr.size)
+
+	delete frames;
 	return hdr.size + sizeof(hdr);	//start of the data
 }
 
@@ -447,53 +462,169 @@ namespace flac
 }
 
 
+///shamelessly copied from libtag:
+int readMpegHeader(FILE *f, fileInfo& info)
+{
+	static const int bitrates[2][3][16] = {
+		{ // Version 1
+			{ 0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0 }, // layer 1
+			{ 0, 32, 48, 56, 64,  80,  96,  112, 128, 160, 192, 224, 256, 320, 384, 0 }, // layer 2
+			{ 0, 32, 40, 48, 56,  64,  80,  96,  112, 128, 160, 192, 224, 256, 320, 0 }  // layer 3
+		},
+		{ // Version 2 or 2.5
+			{ 0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0 }, // layer 1
+			{ 0, 8,  16, 24, 32, 40, 48, 56,  64,  80,  96,  112, 128, 144, 160, 0 }, // layer 2
+			{ 0, 8,  16, 24, 32, 40, 48, 56,  64,  80,  96,  112, 128, 144, 160, 0 }  // layer 3
+		}
+	};
+
+	static const int sampleRates[3][4] = {
+		{ 44100, 48000, 32000, 0 }, // Version 1
+		{ 22050, 24000, 16000, 0 }, // Version 2
+		{ 11025, 12000, 8000,  0 }  // Version 2.5
+	};
+	
+	static const int samplesPerFrame[3][2] = {
+		// MPEG1, 2/2.5
+		{  384,   384 }, // Layer I
+		{ 1152,  1152 }, // Layer II
+		{ 1152,   576 }  // Layer III
+	};
+
+	enum mpegVersion_e {Version1=0,Version2, Version2_5};
+
+	struct {
+		enum mpegVersion_e version;
+		char layer;
+		bool protection;
+		int  bitrate;
+		bool isPadded;
+		int  frameLength;
+		int sampleRate;
+		int samplesPerFrame;
+	} hdr;
+	memset(&hdr, 0, sizeof(hdr) );
+
+	//seek possible start:
+	bool hdrFound=false;
+	while( !feof(f) )
+	{
+		uint8_t sync;
+		fread(&sync, 1, 1, f);
+		if( sync != 0xFF)
+			continue;
+		else 
+		{
+			uint8_t data[4];
+			data[0] = 0xFF;
+			fread(data+1, 3, 1, f);
+
+			std::bitset<32> flags( ntohl( *((uint32_t*)data) ) );
+			if(!flags[23] || !flags[22] || !flags[21]) 
+				continue;
+
+			//db_printf(1,"mpeg header at offset %llu\n", (LLU)(ftell(f)-4) );
+
+			if(!flags[20] && !flags[19])		hdr.version = Version2_5;
+			else if(flags[20] && !flags[19])	hdr.version = Version2;
+			else if(flags[20] && flags[19])		hdr.version = Version1;
+
+			if(!flags[18] && flags[17])			hdr.layer = 3;
+			else if(flags[18] && !flags[17])	hdr.layer = 2;
+			else if(flags[18] && flags[17])		hdr.layer = 1;
+
+			hdr.protection = !flags[16];
+			const int versionIndex = hdr.version == Version1 ? 0 : 1;
+			const int layerIndex = hdr.layer > 0 ? hdr.layer - 1 : 0;
+
+			uint8_t brate = (data[2]) >> 4;
+			hdr.bitrate = bitrates[versionIndex][layerIndex][brate];
+
+			uint8_t srate = (data[2]) >> 2 & 0x03;
+			hdr.sampleRate = sampleRates[hdr.version][srate];
+			if( hdr.sampleRate == 0)
+				continue;
+
+			//hdr.channelMode = ChannelMode((uchar(data[3]) & 0xC0) >> 6);
+			hdr.isPadded = flags[9];
+
+			if(hdr.layer == 1)
+				hdr.frameLength = 24000 * 2 * hdr.bitrate / hdr.sampleRate + int(hdr.isPadded);
+			else
+				hdr.frameLength = 72000 * hdr.bitrate / hdr.sampleRate + int(hdr.isPadded);
+
+			hdr.samplesPerFrame = samplesPerFrame[layerIndex][versionIndex];
+
+
+			//very coarse music length, in seconds:
+			//(proper way is to seek through all the frames, and count them)
+			//(and use the Xing header for VBR mp3's)
+			fseek(f, 0, SEEK_END);
+			float flen = ftell(f);
+			float length = flen / (float)(hdr.bitrate * 125.f);
+
+
+			info.sampleRate = hdr.sampleRate;
+			info.length     = (length+.5f);
+			hdrFound = true;
+			break;
+		}
+	}
+	return hdrFound;
+}
 
 /// Get mime-type, and eventually also tags from the audio data
-std::auto_ptr<fileInfo> getFileInfo(const char *fname)
+//std::auto_ptr<fileInfo>
+void getFileInfo(const char *fname, fileInfo &info)
 {
-	std::auto_ptr<fileInfo> info(new fileInfo);
+//	std::auto_ptr<fileInfo> info(new fileInfo);
 
 	// get mime type, now only based on extension:
 	const char *ext = strrchr(fname,'.');
-	info->mime = getMime(ext);
+	info.mime = getMime(ext);
 
 	// if the extension doesn't indicate audio, don't even try to open it:
-	if( info->mime.compare(0,5,"audio") != 0)
-		return info;
+	if( info.mime.compare(0,5,"audio") != 0)
+		return; // info;
 
 	FILE *f = fopen(fname, "rb" );
 	if(f == NULL)
-		return info;
+		return; // info;
 
-	if( info->mime == "audio/mpeg" )
+	//printf("scanning %s\n",fname);
+
+	if( info.mime == "audio/mpeg" )
 	{
-		info->nrBits = '?';	//slim default
-		info->nrChannels = 2;
-		info->sampleRate = '?';
+		info.nrBits = '?';	//slim default
+		info.nrChannels = 2;
+		info.sampleRate = '?';
 
 		//this matches winamp's behaviour if ID3v2 only contains
 		//	replay-gain tags, but song info is in ID3v1:
-		int r1 = tagID3v1(f, info->tags);	//try ID3v1
-		int r2 = tagID3v2(f, info->tags);	//overwrite results with ID3v2, if exists.
+		int r1 = tagID3v1(f, info.tags);	//try ID3v1
+		int r2 = tagID3v2(f, info.tags);	//overwrite results with ID3v2, if exists.
+
+		fseek(f, util::max(0, r2 -1 ), SEEK_SET);
+		readMpegHeader(f, info);
 
 		//try ID3v2 first, if that doesn't work, try ID3v1
 		//if(r != 0)	r = tagID3v1(f, info->tags);
 		//if(r == 0)	info->isAudioFile = true;
 		if( (r1>=0) || (r2>=0) )
-			info->isAudioFile = true;
+			info.isAudioFile = true;
 	}
-	else if( info->mime == "audio/flac" )
+	else if( info.mime == "audio/flac" )
 	{
-		int r2 = tagID3v2(f, info->tags);
+		int r2 = tagID3v2(f, info.tags);
 		if( r2 > 0 )
 			fseek( f, r2, SEEK_SET);	//id3 found, seek to start of other data
 		else
 			fseek( f, 0 , SEEK_SET);	//nothing found, seek back
-		flac::parseHeader(f, info.get() );
+//		flac::parseHeader(f, &info );
 	}
 
 	fclose(f);
-	return info;
+//	return info;
 }
 
 

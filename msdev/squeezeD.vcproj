@@ -125,11 +125,12 @@
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;NOMINMAX"
 				StringPooling="true"
 				RuntimeLibrary="2"
+				StructMemberAlignment="1"
 				EnableFunctionLevelLinking="true"
 				EnableEnhancedInstructionSet="1"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
-				DebugInformationFormat="0"
+				DebugInformationFormat="3"
 			/>
 			<Tool
 				Name="VCManagedResourceCompilerTool"
@@ -146,7 +147,7 @@
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="..\bin\win32"
 				GenerateManifest="true"
-				GenerateDebugInformation="false"
+				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
