@@ -22,6 +22,8 @@ void readCstring(char *dest, size_t len, FILE *file)
 {
 	char c;
 	size_t i = 0;
+	if( feof(file) || (len==0) )
+		return;
 	do
 	{
 		c = fgetc(file);
@@ -109,27 +111,25 @@ void listdirRecursive( const std::string& basePath,
 	if (!pDir)
 		return;
 
-	printf("listdirRecursive(): %s\n", pDir);
+	db_printf(8,"listdirRecursive(): %s\n",sStartDir.c_str () );
 
 	dirent* pEntry;
 	while ( (pEntry = readdir(pDir)) )
 	{
 		string fullEntry = path::join(sStartDir, pEntry->d_name );
 #ifdef __CYGWIN__
-		bool isDir = path::isdir( fullEntry );	//cygwin doesn't have d_type
+		bool isDir = path::isdir( fullEntry );		// Cygwin doesn't have d_type
 #else
-		//if ( (pEntry->d_type & DT_DIR) && strcmp ( pEntry->d_name, "..") && strcmp ( pEntry->d_name, ".") )
 		bool isDir = (pEntry->d_type & DT_DIR)!=0;
 #endif
-		if ( (isDir) && strcmp ( pEntry->d_name, "..") && strcmp ( pEntry->d_name, ".") )
+		if ( (isDir) && strcmp( pEntry->d_name, "..") && strcmp( pEntry->d_name, ".") )
 		{
 			std::string newRelPath = path::join(relPath, pEntry->d_name);
 			listdirRecursive( basePath, newRelPath, lstFound);
 		}
 		if( !(isDir) )
 		{
-			fileInfo fInfo;
-			getFileInfo( fullEntry.c_str(), fInfo );
+			fileInfo fInfo( fullEntry.c_str() );
 
 			if( fInfo.isAudioFile) {
 				dbEntry entry(relPath, string(pEntry->d_name), &fInfo );
@@ -255,10 +255,10 @@ int musicDB::load(const char *dbName, const char *idxName)
 	if( f_idx == NULL)
 		return -1;
 
-	fread( &nrItems32, sizeof(nrItems32), 1, f_idx);
+	int n = fread( &nrItems32, sizeof(nrItems32), 1, f_idx);
 	if( nrItems32 != nrEntries)
 	{
-		printf("invalid index file, it has %lu instead of %llu entries\n", nrItems32, (LLU)nrEntries);
+		printf("invalid index file, it has %llu instead of %llu entries\n", (LLU)nrItems32, (LLU)nrEntries);
 		fclose(f_idx);
 		return -2;
 	}
@@ -267,11 +267,11 @@ int musicDB::load(const char *dbName, const char *idxName)
 	uint32_t off;
 	for(size_t i = 0; i< nrEntries; i++)
 	{
-		fread( &off, sizeof(uint32_t), 1, f_idx);
+		n = fread( &off, sizeof(uint32_t), 1, f_idx);
 		if( offset[i] != off )
 		{
 			fclose(f_idx);
-			printf("offset[%i] is %i instead of %i\n", (LLU)i, off, offset[i]);
+			printf("offset[%llu] is %i instead of %i\n", (LLU)i, off, offset[i]);
 			fclose(f_idx);
 			return -3;
 		}
@@ -282,7 +282,7 @@ int musicDB::load(const char *dbName, const char *idxName)
 	{
 		idx[table].resize(nrEntries);
 		for(size_t i=0; i< nrEntries; i++)
-			fread( &idx[table][i], 1, sizeof(uint32_t), f_idx);
+			n = fread( &idx[table][i], 1, sizeof(uint32_t), f_idx);
 	}
 
 	// cleanup:

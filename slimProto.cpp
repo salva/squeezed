@@ -588,6 +588,46 @@ void slimConnectionHandler::setBrightness(char brightness)
 }
 
 
+/// Convert volume from floating point dB's to the hardware fixed point 16.16 representation
+uint32_t dBToFixed(float db)
+{
+	uint32_t fixed = 0;
+	float floatmult = powf(10.0f, db / 20.0f);
+
+	if ((db >= -30.0f) && (db <= 0.0f))
+		fixed = static_cast<unsigned int>(floatmult * 256.0f + 0.5f) << 8;
+	else
+		fixed = static_cast<unsigned int>((floatmult * 65536.0f) + 0.5f);
+	return fixed;
+}
+
+
+
+/// Volume, ranging from 0..100
+void slimConnectionHandler::setVolume(uint8_t newVol)
+{
+	float localVol = util::clip<uint8_t>(newVol,0, 100);	// range 0..100
+	uint32_t oldGain = s_volumes[static_cast<uint32_t>(localVol)];
+
+	uint32_t newGain = 0;
+	if (localVol > 0.0f)
+	{
+		float db = (localVol - 100.0f) / 2.0f;
+		newGain = dBToFixed(db);
+	}
+
+	char data[18];
+	netBuffer buf(data);
+	buf.write( (uint32_t) oldGain ); //left
+	buf.write( (uint32_t) oldGain ); //right
+	buf.write( (uint8_t)  1 );			//digital volume control
+	buf.write( (uint8_t)  255 );		//pre-amp
+	buf.write( (uint32_t) newGain );	//left, new format???
+	buf.write( (uint32_t) newGain );	//right, new format
+	assert( buf.idx == sizeof(data) );
+	send("audg", sizeof(data), data);
+}
+
 
 // Low-level streaming command.
 // See squeezeCenter\Slim\Player\SqueezeBox.pm, sub stream_s
@@ -646,11 +686,25 @@ void slimConnectionHandler::play()
 	stream.setSampleSize( data.nBits );
 	stream.setSampleRate( data.sampleRate );
 
-	//TODO: use ipc-> commands, so all player in the current group start playing.
+	// 'smart' replay-gain:
+	bool sameAlbum = false;
+	if( currentItem > 0 )
+		if( data.album == ipc->getList(state.uuid)->get(currentItem-1).album )
+			sameAlbum = true;
+	if( currentItem < (int)ipc->getList(state.uuid)->items.size() - 2 )
+		if( data.album == ipc->getList(state.uuid)->get(currentItem+1).album )
+			sameAlbum = true;
+
+	if( sameAlbum )
+		stream.replayGain = dBToFixed( data.gainAlbum );
+	else
+		stream.replayGain = dBToFixed( data.gainTrack );
+
+
 	stream.command    = 's';	//start the stream
-	stream.serverIP   = 0; //inet_addr( "127.0.0.1" );
+	stream.serverIP   = 0;		//inet_addr( "127.0.0.1" );
 	stream.serverPort = ipc->getShoutPort();
-	stream.autostart  = '1';
+	stream.autostart  = '1';	//quite important, don't know exactly what it means
 	STRM();
 	state.playState = state.PL_PLAY;
 }
@@ -662,6 +716,7 @@ void slimConnectionHandler::pause()
 	STRM();
 	state.playState = state.PL_PAUSE;
 }
+
 
 /// This is also used to indicate to the client that all song-data is sent to the buffer.
 void slimConnectionHandler::unpause()

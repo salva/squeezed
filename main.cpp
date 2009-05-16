@@ -92,8 +92,22 @@ void testShout(void)
 
 void testFlac(void)
 {
-	const char fname[] = "test.flac";
-	//std::auto_ptr<fileInfo> fInfo = getFileInfo(fname );
+	const char path[] = ".";
+	std::vector<std::string> dir = path::listdir( path );
+	
+	for(size_t i=0; i< dir.size(); i++)
+	{
+		std::string ffull = path::join( path, dir[i] );
+		fileInfo fInfo( ffull.c_str() );
+
+		if( fInfo.isAudioFile )
+		{
+			printf("%s (%s)\t", fInfo.tags["title"].c_str(), fInfo.tags["artist"].c_str() );
+			int sec = fInfo.length % 60;
+			int min = fInfo.length / 60;
+			printf("%i Hz, %i bits, %i channels. %i:%02i\n\n", fInfo.sampleRate, fInfo.nrBits, fInfo.nrChannels, min, sec );
+		}
+	}
 	int dummy=1;
 }
 

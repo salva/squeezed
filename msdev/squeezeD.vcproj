@@ -22,6 +22,7 @@
 			IntermediateDirectory="..\obj\win32\$(ConfigurationName)"
 			ConfigurationType="1"
 			CharacterSet="1"
+			WholeProgramOptimization="0"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -41,11 +42,11 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="..\win32"
-				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;NOMINMAX"
-				MinimalRebuild="true"
+				AdditionalIncludeDirectories="..\win32;..\taglib\include;..\taglib\include\taglib"
+				PreprocessorDefinitions="_WIN32;WIN32;_DEBUG;_CONSOLE;NOMINMAX;USE_TAGLIB"
+				MinimalRebuild="false"
 				BasicRuntimeChecks="3"
-				RuntimeLibrary="1"
+				RuntimeLibrary="3"
 				StructMemberAlignment="1"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
@@ -62,10 +63,11 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="Ws2_32.lib"
+				AdditionalDependencies="Ws2_32.lib taglibd.lib"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="..\bin\win32"
-				IgnoreDefaultLibraryNames="MSVCP90D.dll"
+				AdditionalLibraryDirectories="..\taglib\bin"
+				IgnoreAllDefaultLibraries="false"
+				IgnoreDefaultLibraryNames=""
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="1"
@@ -98,7 +100,7 @@
 			IntermediateDirectory="..\obj\win32\$(ConfigurationName)"
 			ConfigurationType="1"
 			CharacterSet="1"
-			WholeProgramOptimization="1"
+			WholeProgramOptimization="0"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -118,16 +120,17 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="1"
-				InlineFunctionExpansion="2"
-				EnableIntrinsicFunctions="true"
+				InlineFunctionExpansion="0"
+				EnableIntrinsicFunctions="false"
 				FavorSizeOrSpeed="2"
-				AdditionalIncludeDirectories="..\win32"
-				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;NOMINMAX"
-				StringPooling="true"
+				WholeProgramOptimization="true"
+				AdditionalIncludeDirectories="..\win32;..\..\taglib_svn\include"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;NOMINMAX;USE_TAGLIB"
+				StringPooling="false"
 				RuntimeLibrary="2"
 				StructMemberAlignment="1"
-				EnableFunctionLevelLinking="true"
-				EnableEnhancedInstructionSet="1"
+				EnableFunctionLevelLinking="false"
+				EnableEnhancedInstructionSet="0"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
 				DebugInformationFormat="3"
@@ -143,14 +146,15 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="Ws2_32.lib"
+				AdditionalDependencies="Ws2_32.lib taglib.lib"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\bin\win32"
+				AdditionalLibraryDirectories="..\taglib\bin"
 				GenerateManifest="true"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
+				LinkTimeCodeGeneration="1"
 				TargetMachine="1"
 			/>
 			<Tool
@@ -296,6 +300,10 @@
 			Filter="rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav"
 			UniqueIdentifier="{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}"
 			>
+			<File
+				RelativePath=".\SqueezeD.rc"
+				>
+			</File>
 		</Filter>
 	</Files>
 	<Globals>

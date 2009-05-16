@@ -12,6 +12,9 @@
 
 #include <vector>
 #include <string>
+
+
+
 #include <time.h>
 
 #include "debug.h"
@@ -562,7 +565,7 @@ public:
 		const playList *list = device->ipc->getList( device->uuid() );
 		string displayName;
 		if( it != list->end() )
-			displayName = it->title + " (" + it->artist + ")";
+			displayName = it->displayTitle(); // it->title + " (" + it->artist + ")";
 		return displayName;
 	}
 
@@ -692,14 +695,9 @@ private:
 			return subDirs.back();
 	}
 
-	static bool stringLessThan( std::string a,  std::string b) 
-	{
-		std::transform(a.begin(), a.end(), a.begin(), toupper);
-		std::transform(b.begin(), b.end(), b.begin(), toupper);
-		return a < b;
-	}
+	bool stringLessThan( std::string a,  std::string b);
 
-	void setItems(std::string&  path )
+	void setItems(const std::string&  path )
 	{
 		items = path::listdir( path , true );
 		//std::sort( items.begin(), items.end(), stringLessThan );	// Sort case insensitive

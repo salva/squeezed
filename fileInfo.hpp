@@ -17,7 +17,7 @@ struct fileInfo
 {
 	std::string url;
 	std::string mime;	// mime-type
-	bool isAudioFile;		// Whether it is a valid file
+	bool isAudioFile;	// Whether it is a valid file
 
 	//audio info (needed by slim, for non-mp3 files):
 	int nrBits;
@@ -25,20 +25,24 @@ struct fileInfo
 	int sampleRate;		///< Samples per second
 	int length;			///< Music length, in seconds
 
+	float gainTrack, gainAlbum;	///< replay gains
+
 	std::map< std::string, std::string> tags;	//possible tags
 
+	/// Zero constructor
 	fileInfo(): isAudioFile(0),
 				nrBits(0), nrChannels(0), sampleRate(0),
-				length(0)
+				length(0),
+				gainTrack(0), gainAlbum(0)
 	{ }
-};
 
+	/// Initialize from a file:
+	fileInfo(const char *fname);
+};
 
 
 //Get mime type, based on the extension of a filename
 std::string getMime(const char *extension);
 
-//std::auto_ptr<fileInfo> 
-void getFileInfo(const char *fname, fileInfo& info);
 
 #endif

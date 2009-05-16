@@ -113,6 +113,9 @@ namespace path {
 	/// Combine two strings into a single pathname.
 	std::string join(const std::string& p1, const std::string& p2);
 
+	/// Split path and fileanme
+	std::vector<std::string> split(const std::string& path);
+
 } //namespace path
 
 

@@ -285,6 +285,17 @@ namespace path
 	}
 
 
+	// split path and filename
+	std::vector<std::string> split(const std::string& path)
+	{
+		std::vector<std::string> out;
+		int pos = path.rfind( os::sep );
+		out.push_back( path.substr(0, pos  ) );
+		out.push_back( path.substr(pos+1) );
+		return out;
+	}
+
+
 } //namespace path
 
 

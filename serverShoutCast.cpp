@@ -269,6 +269,7 @@ nbuffer::buffer* shoutConnectionHandler::handleGet(const char* request)
 			{
 				//parse request, break it down into a command name and it's parameters
 				//TODO: determine group name
+				//TODO: match SqueezeCenter: squeezecenter-7.3.2/HTML/EN/html/docs/http.html
 				std::string fname;
 				string paramStr = pstring::split( request, ' ')[1];
 				std::map<std::string,std::string> params = parseUrlParams(paramStr, &fname);

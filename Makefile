@@ -1,7 +1,10 @@
 
 
-
 #---------- Project settings
+
+#to support many file formats:
+CONFIG=-DUSE_TAGLIB
+
 
 #SRCS=$(wildcard *.cpp) 
 SRCS=configParser.cpp fileInfo.cpp util.cpp\
@@ -41,12 +44,12 @@ CC=g++
 OBJDIR= obj/$(HOST)
 BINDIR = bin/$(HOST)
 
-CFLAGS+=-Os -g
-LDFLAGS+=-Os -lpthread
+CFLAGS+=-Os -g -I/usr/include/taglib $(CONFIG)
+LDFLAGS+=-Os -lpthread -ltag
 OBJ_EXT=o
 
 ifeq ($(HOST),Cygwin)
-	CFLAGS+=-D__CYGWIN__ -I/usr/include 
+	CFLAGS+=-D__CYGWIN__ 
 	#--enable-pthreads
 endif
 

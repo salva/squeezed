@@ -293,11 +293,11 @@ private:
 		std::string		currentGroup;	///< Current playlist
 		slimScreen		*currentScreen;	///< Current visible menu
 		char			uuid[18];		///< unique device identifier
-		enum anim_e {ANIM_NONE, ANIM_HW, ANIM_SW} anim;	//animation stat
-
 		char			volume;
 		char			brightness;
 		enum {PL_STOP, PL_PAUSE, PL_PLAY} playState;
+		enum anim_e {ANIM_NONE, ANIM_HW, ANIM_SW} anim;	//animation stat
+
 
 		// Constructor, set defaults
 		state_s():	currentGroup("all"),
@@ -488,42 +488,11 @@ public:
     /// Enable audio outputs
     void setAudio(bool spdif, bool dac);
 
-
-	/// Volume, ranging from 0..100
-	void setVolume(uint8_t newVol)
-	{
-		float localVol = util::clip<uint8_t>(newVol,0, 100);	// range 0..100
-		uint32_t oldGain = s_volumes[static_cast<uint32_t>(localVol)];
-
-		uint32_t newGain = 0;
-		if (localVol > 0.0f)
-		{
-			float db = (localVol - 100.0f) / 2.0f;
-			float floatmult = powf(10.0f, db / 20.0f);
-
-			if ((db >= -30.0f) && (db <= 0.0f))
-				newGain = static_cast<unsigned int>(floatmult * 256.0f + 0.5f) << 8;
-			else
-				newGain = static_cast<unsigned int>((floatmult * 65536.0f) + 0.5f);
-		}
-
-		char data[18];
-		netBuffer buf(data);
-		buf.write( (uint32_t) oldGain ); //left
-		buf.write( (uint32_t) oldGain ); //right
-		buf.write( (uint8_t)  1 );			//digital volume control
-		buf.write( (uint8_t)  255 );		//pre-amp
-		buf.write( (uint32_t) newGain );	//left, new format???
-		buf.write( (uint32_t) newGain );	//right, new format
-		assert( buf.idx == sizeof(data) );
-		send("audg", sizeof(data), data);
-	}
-
-
     /// Set brightness 0..4
     void setBrightness(char b);
 
-
+	/// Volume, ranging from 0..100
+	void setVolume(uint8_t newVol);
 
     /// Various commands the server can perform:
     void play();

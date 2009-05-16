@@ -1,8 +1,11 @@
 
+
+#include <algorithm>	//for transfom
+#include <cctype>		//for toupper
+
+
 #include "musicDB.hpp"	//for the search menu
-
 #include "slimDisplay.hpp"
-
 #include "fonts/font.hpp"
 
 // include squeezeCenter fonts:
@@ -82,9 +85,9 @@ void keyPress(char key, string *text, bool *newSymbol)
 					sameT9 = true;
 					break;
 				}
-			if( sameT9 )	
+			if( sameT9 )
 				*newText = c[ (idx+1) % strlen(c) ];	// if so, goto next in chrList.
-			else			
+			else
 				*newText = c[0];				//else, goto first in chrList
 		}
 	}
@@ -118,18 +121,18 @@ void slimDisplay::draw(char transition, int8_t param)
 		}
 	}
 
-	
-	if( transition != 'c') 
+
+	if( transition != 'c')
 	{
 		//new animations override old ones:
 		refreshAfterAnim = false;
 		slimConnection->state.anim = slimConnectionHandler::state_s::ANIM_HW;
 		slimConnection->send("grfe", sizeof(packet), packet);
 	}
-	else 
+	else
 	{
 		//don't update if animation is running
-		if( slimConnection->state.anim != slimConnectionHandler::state_s::ANIM_HW) 
+		if( slimConnection->state.anim != slimConnectionHandler::state_s::ANIM_HW)
 		{
 			refreshAfterAnim = false;	//just send something, no refresh needed
 			slimConnection->send("grfe", sizeof(packet), packet);
@@ -147,7 +150,7 @@ int slimDisplay::strWidth(const char *msg, int fontsize)
 	const font_s *font = fontPerSize[ fontsize ];
 	int width = 0;
 	while( *msg != 0)
-		width += font->width( *(msg++) );
+		width += font->width( *(msg++) ) + 1;	//slimDisplay::putChar adds 1 whitespace line
 	return width;
 }
 
@@ -197,11 +200,22 @@ int slimDisplay::print(const char *msg, int fontSize, bool send)
 
 //--------------------- while playing screen -------------------
 
+void splitSeconds(int secTot, int &hours, int &minutes, int &seconds)
+{
+	minutes = secTot / 60;	//integer division floors
+	seconds = secTot % 60;
+
+	hours   = minutes / 60;
+	minutes = minutes % 60;
+}
+
+
 void slimPlayingMenu::draw(char transition, int8_t param)
 {
 	int fontSizes[] = {11, 19};
 
-	char elapsed[10], header[80], songInfo[80];
+	char elapsed[30], header[80];
+	std::string songInfo;
 	// Get song info:
 	int elapsed_ms = display->slimConnection->status.songMSec;
 
@@ -213,23 +227,30 @@ void slimPlayingMenu::draw(char transition, int8_t param)
 	if( listSize > 0) song =  list->items[ list->currentItem ] ;
 
 	// Prepare strings to display:
-	int secTot = elapsed_ms/1000;
-	int sec = secTot % 60;
-	int min = (secTot-sec) / 60;
-	sprintf(elapsed, " %02i:%02i", min, sec);
+	int hrElaps, minElaps, secElaps;
+	splitSeconds( elapsed_ms/1000, hrElaps, minElaps, secElaps);
+
+	int hrSong, minSong, secSong;
+	splitSeconds( song.length, hrSong, minSong, secSong);
+
+	sprintf(elapsed, " %02i:%02i / %02i:%02i", minElaps, secElaps, minSong, secSong);
+	//sprintf(elapsed, " %i / %i", elapsed_ms/1000, song.length );	//for debug
+
 	sprintf(header,  "Now Playing (%i of %i)", songNr+1, listSize);
-	sprintf(songInfo,"%s (%s)", song.title.c_str(), song.artist.c_str() );
+	//sprintf(songInfo,"%s (%s)", song.title.c_str(), song.artist.c_str() );
+	songInfo = song.displayTitle();
 
 	//re-draw the entire screen:
 	display->cls();
 	display->gotoxy(0,0);
 	display->print(header, fontSizes[0] );
 
-	display->gotoxy( 320 - strlen(elapsed)*8  ,0);
+	int strLen = display->strWidth(elapsed, fontSizes[0] );
+	display->gotoxy( 320 - strLen, 0 );
 	display->print(elapsed, fontSizes[0] );
 
 	display->gotoxy(0, fontSizes[0] + 1 );
-	display->print( songInfo, fontSizes[1] );
+	display->print( songInfo.c_str() , fontSizes[1] );
 	display->draw(transition, param);
 }
 
@@ -382,7 +403,7 @@ void slimSearchMenu::draw(char transition, int8_t param)
 			if( newSymbol ) {
 				char c[] = "a";
 				x0 = xl + xw;
-				x1 = x0 + display->strWidth(c, fontSizes[1] );	
+				x1 = x0 + display->strWidth(c, fontSizes[1] );
 			} else {
 				const char *c = match.c_str() + match.size() -1;
 				x1 = xl + xw;
@@ -419,6 +440,22 @@ void slimSearchMenu::draw(char transition, int8_t param)
 	}
 	display->draw(transition,param);
 }
+
+
+//-------------------- Slim browse menu --------------------
+
+bool slimBrowseMenu::stringLessThan( std::string a,  std::string b)
+{
+	/*for(int i=0; i<a.size(); i++)
+		a[i] = toupper(a[i]);
+	for(int i=0; i<b.size(); i++)
+		b[i] = toupper(b[i]);*/
+	std::transform(a.begin(), a.end(), a.begin(), (int(*)(int))toupper);
+	std::transform(b.begin(), b.end(), b.begin(), (int(*)(int))toupper);
+	return a < b;
+}
+
+
 
 
 //--------------------- volume control -------------------

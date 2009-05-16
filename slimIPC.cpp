@@ -17,14 +17,20 @@ musicFile::musicFile(void)
 	format = '?';
 	nChannels = 0; nBits = 0; sampleRate = 0;
 	ip =0; port = 0;
+	length = 0;
 }
 
 
 musicFile::musicFile(const char *fname, uint16_t port)
 {
-	//std::auto_ptr<fileInfo> finfo = getFileInfo(fname);
-	fileInfo finfo;
-	getFileInfo(fname, finfo);
+	setFromFile(fname);
+	this->port = port;
+}
+
+
+bool musicFile::setFromFile(const char *fname)
+{
+	fileInfo finfo(fname);
 
 	if( finfo.isAudioFile )
 	{
@@ -40,12 +46,20 @@ musicFile::musicFile(const char *fname, uint16_t port)
 		nChannels	= finfo.nrChannels;
 		nBits		= finfo.nrBits;
 		sampleRate	= finfo.sampleRate;
+		length      = finfo.length;
+		gainTrack	= finfo.gainTrack;
+		gainAlbum	= finfo.gainAlbum;
 
 		url			= fname;
 		ip			= 0;	//localhost
-		this->port = port;
-	} else
-		url			= "";
+	} else {
+		format = 0;
+		nChannels = 0;
+		gainTrack = 0;
+		gainAlbum = 0;
+		ip		  = 0;
+	}
+	return finfo.isAudioFile;
 }
 
 
@@ -53,15 +67,21 @@ musicFile::musicFile(const char *fname, uint16_t port)
 musicFile::musicFile(string csv, uint16_t port)
 {
 	int i=0;
-	vector<string> items = pstring::split(csv, ',');
-	title  = items[i++];
-	artist = items[i++];
-	album  = items[i++];
-	format = items[i++][0];
-	nChannels = atoi( items[i++].c_str() );
-	nBits	  = atoi( items[i++].c_str() );
-	sampleRate= atoi( items[i++].c_str() );
-	url = items[i++];
+	/*vector<string> items = pstring::split(csv, ',');
+	if( items.size() >= 9 )
+	{
+		title  = items[i++];
+		artist = items[i++];
+		album  = items[i++];
+		format = items[i++][0];
+		nChannels = atoi( items[i++].c_str() );
+		nBits	  = atoi( items[i++].c_str() );
+		sampleRate= atoi( items[i++].c_str() );
+		length    = atoi( items[i++].c_str() );
+		url = items[i++];
+	}*/
+	url = csv;
+	setFromFile( url.c_str() );
 
 	this->port = port;
 	ip = 0;
@@ -71,8 +91,9 @@ musicFile::musicFile(string csv, uint16_t port)
 musicFile::operator string()
 {
 	stringstream out;
-	out << title << "," << artist << "," << album << ",";
-	out << format << "," << nChannels << "," << nBits << "," << sampleRate << ",";
+//	out << title  << "," << artist << "," << album << ",";
+//	out << format << "," << nChannels << "," << nBits << "," << sampleRate << ",";
+//	out << length << ",";
 	out << url;
 	return out.str();
 }
@@ -203,7 +224,7 @@ void slimIPC::load( void )
 		while( config.hasOption(groupName, itemName ) )
 		{
 			string item =  config.get(groupName, itemName );
-			musicFile f= musicFile(item);
+			musicFile f = musicFile(item);
 			group[groupNames[i]].items.push_back( f );
 			sprintf(itemName, "item%03i", ++nr);
 		}
@@ -229,7 +250,7 @@ void slimIPC::save( void )
 		config.set(groupName, "position", configValue(list.currentItem) );
 		for(size_t i=0; i < list.items.size(); i++)
 		{
-			sprintf(itemName, "item%03zu", i);
+			sprintf(itemName, "item%03llu", (LLU)i);
 			config.set(groupName, itemName, configValue(list.items[i]) );
 		}
 	}
@@ -259,7 +280,7 @@ int slimIPC::addDevice(string clientName, client* dev)	//add a device to the cur
 
 
 // forget about it
-int slimIPC::delDevice(string clientName)				
+int slimIPC::delDevice(string clientName)
 {
 	std::vector<dev_s>::iterator it = devByName( clientName );
 	if( it != devices.end() )
@@ -336,7 +357,7 @@ int slimIPC::seekList(string groupName, int offset, int origin, bool stopCurrent
 	switch(origin)
 	{
 	case SEEK_SET:
-		newIndex = offset;			
+		newIndex = offset;
 		break;
 	case SEEK_END:
 		newIndex = list->items.size() - offset;
@@ -370,10 +391,10 @@ int slimIPC::seekList(string groupName, int offset, int origin, bool stopCurrent
 					devices[i].device->stop();
 				//start a new song, unless we've reached the end of the playlist.
 				if( !isAtEnd  )
-					devices[i].device->play();	
+					devices[i].device->play();
 			}
 	}
-	return list->currentItem; 
+	return list->currentItem;
 }
 
 

@@ -26,8 +26,27 @@
 
 #include <string.h>
 #include <stdint.h>
-#include <assert.h>
-#include <bitset>	//for mpeg header
+
+#ifdef USE_TAGLIB
+	#ifdef WIN32
+		#include <fileref.h>
+		#include <tag.h>
+		#include <flacfile.h>
+		#include <mpegfile.h>
+		#include <id3v2tag.h>
+		#include <xiphcomment.h>
+	#else
+		#include <taglib/fileref.h>
+		#include <taglib/tag.h>
+		#include <taglib/flacfile.h>
+		#include <taglib/mpegfile.h>
+		#include <taglib/id3v2tag.h>
+		#include <xiphcomment.h>
+	#endif
+#else
+	#include <assert.h>		// To check compilation of struct-alignment
+	#include <bitset>		// For mpeg header decoding
+#endif
 
 #include "debug.h"
 #include "util.hpp"
@@ -72,6 +91,8 @@ std::string getMime(const char *extension)
 	return mime;
 }
 
+
+#ifndef USE_TAGLIB
 
 //as defined by http://www.id3.org/id3v2-00
 const char *id3v1Genres[] = {
@@ -287,7 +308,7 @@ int tagID3v2(FILE *f, std::map<std::string, std::string> &tags )
 			text.assign(frame->data+1, frame->size-1);		//also 1-byte encoding
 		else if( frame->data[0] == 1)		//UTF-16, unicode, zero-terminated
 		{
-			
+
 			//std::wstring wtext = std::wstring((wchar_t*)(frame->data+3), (frame->size-3)/2); //unicode
 			//text.resize( wtext.length() );
 			if(frame->size > 3)
@@ -368,8 +389,8 @@ namespace flac
 		uint32_t frmSizeMin;
 		uint32_t frmSizeMax;
 		uint32_t sampleRate;	//in Hz
-		uint8_t nrChannels;		//number of channels 
-		uint8_t bits;			//bits per sample 
+		uint8_t nrChannels;		//number of channels
+		uint8_t bits;			//bits per sample
 		uint64_t nrSamples;		//stream length in samples
 		char md5[16];
 		//unsigned short md5: 128;		//md5 of uncompressed data
@@ -435,13 +456,14 @@ namespace flac
 
 	int parseHeader(FILE *f, fileInfo* info)
 	{
+		int n;
 		stream strm;
 
 		//check if structs are compiled correctly:
 		assert( sizeof(metadataBlock) == 4);
 
 		//fseek(f, 0, SEEK_SET);
-		fread( &strm, sizeof(strm), 1, f);
+		n=fread( &strm, sizeof(strm), 1, f);
 
 		//check header:
 		if( memcmp( strm.id, "fLaC", 4) )
@@ -483,7 +505,7 @@ int readMpegHeader(FILE *f, fileInfo& info)
 		{ 22050, 24000, 16000, 0 }, // Version 2
 		{ 11025, 12000, 8000,  0 }  // Version 2.5
 	};
-	
+
 	static const int samplesPerFrame[3][2] = {
 		// MPEG1, 2/2.5
 		{  384,   384 }, // Layer I
@@ -510,17 +532,17 @@ int readMpegHeader(FILE *f, fileInfo& info)
 	while( !feof(f) )
 	{
 		uint8_t sync;
-		fread(&sync, 1, 1, f);
+		int n = fread(&sync, 1, 1, f);
 		if( sync != 0xFF)
 			continue;
-		else 
+		else
 		{
 			uint8_t data[4];
 			data[0] = 0xFF;
-			fread(data+1, 3, 1, f);
+			n = fread(data+1, 3, 1, f);
 
 			std::bitset<32> flags( ntohl( *((uint32_t*)data) ) );
-			if(!flags[23] || !flags[22] || !flags[21]) 
+			if(!flags[23] || !flags[22] || !flags[21])
 				continue;
 
 			//db_printf(1,"mpeg header at offset %llu\n", (LLU)(ftell(f)-4) );
@@ -573,25 +595,147 @@ int readMpegHeader(FILE *f, fileInfo& info)
 	return hdrFound;
 }
 
-/// Get mime-type, and eventually also tags from the audio data
-//std::auto_ptr<fileInfo>
-void getFileInfo(const char *fname, fileInfo &info)
+#endif
+
+
+
+//for some reason, TagLib::String::to8bit() crashed under win32...
+std::string tagLibStr(TagLib::String st)
 {
-//	std::auto_ptr<fileInfo> info(new fileInfo);
+	const char *str = st.toCString();
+	std::string out(str);
+	return out;
+}
+
+
+
+/// Get mime-type, and eventually also tags from the audio data
+fileInfo::fileInfo(const char *fname)
+{
+	//set default values:
+	isAudioFile	= false;
+	nrBits = nrChannels = sampleRate = 0;
+	length = 0;
+	gainTrack = gainAlbum = 0;
 
 	// get mime type, now only based on extension:
 	const char *ext = strrchr(fname,'.');
-	info.mime = getMime(ext);
+	mime = getMime(ext);
 
 	// if the extension doesn't indicate audio, don't even try to open it:
-	if( info.mime.compare(0,5,"audio") != 0)
+	if( mime.compare(0,6,"audio/") != 0)
 		return; // info;
+#ifdef USE_TAGLIB
+	else
+	{
+		//format independent info:
+		TagLib::File *pf = NULL;
+		TagLib::AudioProperties *prop = NULL;
+		TagLib::ID3v2::Tag *id3v2 = NULL;
+		TagLib::Ogg::XiphComment   *xiph  = NULL;
 
+		//first open using format specific code:
+		// and make sure that *pf is really of the correct type:
+		if( mime == "audio/flac" )
+		{
+			TagLib::FLAC::File *flac = new TagLib::FLAC::File( fname );
+			if( !flac->isValid() )
+				return;
+			if( flac->audioProperties() == NULL)
+				return;
+			//might be here:
+			id3v2 = flac->ID3v2Tag();
+			xiph  = flac->xiphComment();
+
+			//FLAC specific info:
+			nrBits = flac->audioProperties()->sampleWidth();
+			//db_printf(5,"%i bits\n", info.nrBits);
+			pf = flac;
+		}
+		else if( mime == "audio/mpeg" )
+		{
+			TagLib::MPEG::File *mpeg = new TagLib::MPEG::File( fname , true, TagLib::AudioProperties::Accurate );
+
+			if( !mpeg->isValid() )
+				return;
+			id3v2 = mpeg->ID3v2Tag();
+			pf = mpeg;
+		}
+
+		if( pf == NULL )
+			return;
+		prop = pf->audioProperties();
+		if( prop == NULL)
+			return;
+
+		length     = prop->length();
+		sampleRate = prop->sampleRate();
+		nrChannels = prop->channels();
+		isAudioFile= true;
+
+		//db_printf(5,"\t%30s. %i seconds, %i Hz\n", fname, info.length, info.sampleRate );
+
+		//set generic tags
+		TagLib::Tag *tag = pf->tag();
+		if( tag != NULL)
+		{
+			tags["artist"] = tagLibStr( tag->artist() );
+			tags["album"]  = tagLibStr( tag->album()  );
+			tags["title"]  = tagLibStr( tag->title()  );
+			tags["genre"]  = tagLibStr( tag->genre()  );
+			tags["year"]   = tag->year();
+			tags["track"]  = tag->track();
+		}
+
+		// Get replay-gain info
+		if(id3v2 != NULL)
+		{
+			//it's officially stored here:
+			//const TagLib::ID3v2::FrameListMap map = id3v2->frameListMap();
+			//TagLib::ID3v2::FrameList rgad = id3v2->frameListMap()["RGAD"];
+			//if(!rgad.isEmpty())
+			//	float gain = ((TagLib::ID3v2::RelativeVolumeFrame*)rgad.front())->volumeAdjustment();
+
+			// But in practice stored here:
+			TagLib::ID3v2::FrameList list =	id3v2->frameListMap()["TXXX"];
+
+			for(size_t i=0; i < list.size(); i++)
+			{
+				TagLib::ID3v2::Frame *f = list[i];
+				std::string content = f->toString().to8Bit();
+				std::string value;
+				if( content.find("replaygain_track_gain") != string::npos)
+					sscanf( content.c_str(), "%*s %*s %f %*s", &gainTrack );
+				if( content.find("replaygain_album_gain") != string::npos)
+					sscanf( content.c_str(), "%*s %*s %f %*s", &gainAlbum );
+			}
+		}
+
+		//alternate source for replay-gain info
+		if( xiph != NULL)
+		{
+			if( xiph->contains("REPLAYGAIN_TRACK_GAIN") )
+			{
+				const char* strTrack = xiph->fieldListMap()["REPLAYGAIN_TRACK_GAIN"][0].toCString();
+				sscanf( strTrack, "%f %*s", &gainTrack );
+			}
+
+			if( xiph->contains("REPLAYGAIN_ALBUM_GAIN") )
+			{
+				const char* str = xiph->fieldListMap()["REPLAYGAIN_ALBUM_GAIN"][0].toCString();
+				sscanf( str, "%f %*s", &gainAlbum );
+			}
+		}
+
+		delete pf;
+	} //if mime == "audio"
+
+	db_printf(50,"%30s, %i seconds. track gain %.4f\n", fname, length, gainTrack );
+
+#else
 	FILE *f = fopen(fname, "rb" );
 	if(f == NULL)
-		return; // info;
-
-	//printf("scanning %s\n",fname);
+		return;
 
 	if( info.mime == "audio/mpeg" )
 	{
@@ -620,10 +764,12 @@ void getFileInfo(const char *fname, fileInfo &info)
 			fseek( f, r2, SEEK_SET);	//id3 found, seek to start of other data
 		else
 			fseek( f, 0 , SEEK_SET);	//nothing found, seek back
-//		flac::parseHeader(f, &info );
+		flac::parseHeader(f, &info );
 	}
 
 	fclose(f);
+#endif
+
 //	return info;
 }
 

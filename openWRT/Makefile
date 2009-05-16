@@ -1,10 +1,14 @@
 # This is the makefile for the openwrt build system.
 #
-# copy this to:
+# copy this file to:
 #		trunk/package/squeezed
 #
 # copy the files in the parent directory to:
 #		trunk/package/squeezed/files
+#
+# You can compile this package alone by running:
+#		cd trunk
+#		make package/squeezed-compile
 
 
 include $(TOPDIR)/rules.mk

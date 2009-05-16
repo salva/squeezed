@@ -37,33 +37,57 @@ typedef slimConnectionHandler client;
 
 
 
-/// Basic definition of items in the database:
-class musicFile {
+/// Basic definition of items in the database
+/// TODO: inherit from fileinfo.hpp::fileInfo, and add some 
+///			squeezebox specific info (url,ip,port)
+class musicFile 
+{
+private:
+	bool setFromFile(const char *fname);
 public:
-    //song info (this should be a key-value pairs):
+    // Song info (this should be a key-value pairs):
     std::string title;
     std::string artist;
     std::string album;
 
-    //datafile info:
-    char format;		//compression format: [m]p3, [p]cm, [f]lac, ogg
-    int nChannels;      //number of channels
-    int nBits;          //uncompressed number of bits;
-    int sampleRate;     //samples per second
+    // Datafile info:
+    char format;		///< Compression format: [m]p3, [p]cm, [f]lac, ogg
+    int nChannels;      ///< Number of channels
+    int nBits;          ///< Uncompressed number of bits;
+    int sampleRate;     ///< Samples per second
+	int length;			///< File length, in number of seconds
+	float gainTrack, gainAlbum;	// Replay-gain
 
-    //storage location:
+    // Storage location:
     std::string url;    //path/filename to use in a stream request.
 	uint32_t ip;
 	uint16_t port;
 
-	/// empty initialization
+	/// Empty initialization
 	musicFile(void);
 
-	///	initialize from a music file
+	///	Initialize from a music file
 	musicFile(const char *fname, uint16_t port=9000);
 
-	/// init from a comma separated list of values
+	/// Init from a comma separated list of values
 	musicFile(string csv, uint16_t port=9000);
+
+	/// Generate a title to display:
+	std::string displayTitle(void) const
+	{
+		std::string out;
+		if( title.size() > 0)
+		{
+			out = title;
+			if( artist.size() > 0 )
+				out += " (" + artist + ")";
+		} else {
+			std::vector<std::string> pf = path::split( url );
+			out = pf[1];
+		}
+		return out;
+	}
+
 
 	/// convert to comma separated list of values
 	operator string();
