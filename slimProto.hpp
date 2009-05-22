@@ -89,7 +89,7 @@ enum commands_e
     cmd_left, cmd_right, cmd_up, cmd_down,
 	cmd_play, cmd_pause, cmd_rewind, cmd_forward,
 	cmd_shuffle, cmd_repeat,
-	cmd_add, cmd_search, cmd_browse, cmd_playing,
+	cmd_add, cmd_search, cmd_favorites, cmd_browse, cmd_playing,
 	cmd_size, cmd_brightness,
 	cmd_pwr, cmd_sleep, cmd_pwrOn, cmd_pwrOff,
 };
@@ -235,15 +235,9 @@ const unsigned char s_volumes[] =
 };
 
 
-class slimDisplay;
 class slimScreen;
-class slimMenu;
-class slimBrowseMenu;
-class slimSearchMenu;
-class slimPlayingMenu;
-class slimPlayListMenu;
-class slimVolumeScreen;
 class playList;
+class musicFile;
 
 
 
@@ -252,14 +246,17 @@ class slimConnectionHandler : public connectionHandler
 {
 	//friend class slimScreen;
 	friend class slimPlayingMenu;
-	friend class slimPlayListMenu;	//need to change this...
-	friend class slimVolumeScreen;
+	//friend class slimPlayListMenu;	//need to change this...
+	//friend class slimVolumeScreen;
 	friend class slimIPC;
 	friend class slimDisplay;
 public:
 	slimIPC *ipc;		    ///< connection to the data-server
 
+	struct state_s;
+	struct menu_s;
 private:
+
 
 	struct rxBuf_s {
 		char    data[1<<10];   ///< input buffer, doens't need to be big for the slim-protocol
@@ -279,35 +276,11 @@ private:
 
 
 	/// Menu-system
-    slimDisplay		*display;
-	slimMenu		*mainMenu;
-	slimMenu		*searchMenu;	//sub-menu with all search options
-	slimSearchMenu	*searchAlbum, *searchArtist;
-	slimBrowseMenu	*folderMenu;	//needs to be written
-	slimPlayingMenu	*nowPlayingScreen;
-	slimPlayListMenu *menuPlayList;
-	slimVolumeScreen *volumeScreen;
+	struct menu_s *menu;
+
 
 	/// Connection state
-	struct state_s {
-		std::string		currentGroup;	///< Current playlist
-		slimScreen		*currentScreen;	///< Current visible menu
-		char			uuid[18];		///< unique device identifier
-		char			volume;
-		char			brightness;
-		enum {PL_STOP, PL_PAUSE, PL_PLAY} playState;
-		enum anim_e {ANIM_NONE, ANIM_HW, ANIM_SW} anim;	//animation stat
-
-
-		// Constructor, set defaults
-		state_s():	currentGroup("all"),
-					currentScreen(NULL),	//this doens't work if mainMenu isn't initialized
-					volume(90),
-					brightness(3),
-					playState(PL_STOP),
-					anim(ANIM_NONE)
-		{ }
-	} state;
+	struct state_s *state;
 
 
 	/// Streaming status
@@ -333,6 +306,8 @@ private:
         uint32_t visip;     //default 0;*/
         uint16_t serverPort;	// default 9000
         uint32_t serverIP;		// 0 implies control server, 1 means squeezenetwork?
+
+        std::string url;		//for network streaming, the url used in the GET command
 
 		void setSampleSize(int nrBits)
 		{
@@ -438,25 +413,32 @@ protected:
     /// Low-level streaming command.
 	/// See squeezeCenter\Slim\Player\SqueezeBox.pm, sub stream_s
 	/// look for "my $frame = pack"
-    void STRM();
+    void STRM(void);
 
 
 public:
     slimConnectionHandler(SOCKET socketFD, slimIPC *ipc);
     ~slimConnectionHandler();
 
+
+	// Functions that allow display to change the state:
+	enum anim_e {ANIM_NONE, ANIM_HW, ANIM_SW};
+
 	/// set another menu, redraw the screen
 	void setMenu(slimScreen *newMenu, char transition = 'c' );
 
-	const std::string& currentGroup(void)
-	{
-		return state.currentGroup;
-	}
+	const std::string& currentGroup(void);
 
-	const char* uuid(void)
-	{
-		return state.uuid;
-	}
+	const char* uuid(void);
+
+	char *volume(void);
+
+	anim_e *anim(void);
+
+	char *brightness(void);
+
+	const musicFile& currentSong(void);
+
 
     /// This is were the data comes in
     bool processRead(const void *data, size_t len);
@@ -464,26 +446,26 @@ public:
     /// Low-level send command
     int send(const char cmd[4], uint16_t len, void *data);
 
+
+	/// wrapper around all visualization modes:
+	/*struct visu_s
+	{
+	private:
+		int currentMode;
+        static const int nrParam = 7;
+        static const char data[2 + 4*nrParam];
+        uint32_t *param;
+
+	public:
+        visu_s(void)
+        {
+        	param = (uint32_t*)(&data[2]);
+        }
+	};*/
+
     /// Set visualization
-    void visualization(bool enable, char style)
-    {
-        const int nrParam = 7;
-        char data[2 + 4*nrParam];
-        uint32_t *param = (uint32_t*)(&data[2]);
-
-        data[0] = enable;
-        data[1] = style;
-
-        param[0] = 0;   //stereo
-        param[1] = style;
-        param[2] = 0;   //position (0=left)
-        param[3] = 160; //width;
-        param[4] = 160; //r_position;
-        param[5] = 160; //r_width;
-
-        send("visu", sizeof(data), data);
-    }
-
+    /// Can chose from a limited number of pre-defined modes.
+    void setVisualization(uint8_t mode);
 
     /// Enable audio outputs
     void setAudio(bool spdif, bool dac);

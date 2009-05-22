@@ -13,6 +13,9 @@
 #include "fonts/fontStandard2.h"
 #include "fonts/fontFull.h"
 
+#ifdef _USE_LZF
+#include "lzf.h"
+#endif
 
 const font_s *fonts[] = {&fontStandard_1, &fontStandard_2, &fontFull};
 static const font_s* fontPerSize[32];
@@ -100,11 +103,15 @@ void keyPress(char key, string *text, bool *newSymbol)
 
 void slimDisplay::draw(char transition, int8_t param)
 {
+	char 	command[] = "grfe";	//slim command to accept a screen buffer
+	size_t  packetLen = sizeof(packet);	//size of uncompressed packet
+
 	netBuffer buf(packet);
 	buf.write( (uint16_t)0 );	//offset, if ~640 for squeezebox transporter..
 	buf.write( transition );	//transition ('c'=constant,'R'=right,'L'=left,'U','D')
-	buf.write( (char)param );			//transition height of screen
+	buf.write( (char)param );	//transition height of screen
 	assert( buf.idx == 4);
+
 
 	//convert uint8 to binary data:
 	//char *screen = buf.data + buf.idx;
@@ -121,21 +128,32 @@ void slimDisplay::draw(char transition, int8_t param)
 		}
 	}
 
-
+	//Optional: compress the data:
+	char *data = packet;
+#ifdef _USE_LZF
+	int didCompress = lzf_compress( packet,  packetLen, cpacket, packetLen-1 );
+	if( didCompress )
+	{
+			data = cpacket;
+			command[0] |= 0x80;			// set header to mark compressed data
+			packetLen = didCompress;	// Set correct size
+	}
+#endif
+	// Setup animations:
 	if( transition != 'c')
 	{
 		//new animations override old ones:
 		refreshAfterAnim = false;
-		slimConnection->state.anim = slimConnectionHandler::state_s::ANIM_HW;
-		slimConnection->send("grfe", sizeof(packet), packet);
+		*(slimConnection->anim()) = slimConnectionHandler::ANIM_HW;
+		slimConnection->send(command, packetLen, data);
 	}
 	else
 	{
 		//don't update if animation is running
-		if( slimConnection->state.anim != slimConnectionHandler::state_s::ANIM_HW)
+		if( *(slimConnection->anim()) != slimConnectionHandler::ANIM_HW)
 		{
 			refreshAfterAnim = false;	//just send something, no refresh needed
-			slimConnection->send("grfe", sizeof(packet), packet);
+			slimConnection->send(command, packetLen, data);
 		} else
 			refreshAfterAnim = true;	//send it after animation has completed
 	}
@@ -219,12 +237,14 @@ void slimPlayingMenu::draw(char transition, int8_t param)
 	// Get song info:
 	int elapsed_ms = display->slimConnection->status.songMSec;
 
-	std::string group = display->slimConnection->state.currentGroup;
-	const playList *list = display->slimConnection->ipc->getList( display->slimConnection->state.uuid );
+	std::string group = display->slimConnection->currentGroup();
+
+	musicFile song = display->slimConnection->currentSong();
+
+	const playList *list = display->slimConnection->ipc->getList( display->slimConnection->uuid() );
 	int songNr    = list->currentItem;
 	int listSize  = list->items.size();
-	musicFile song;
-	if( listSize > 0) song =  list->items[ list->currentItem ] ;
+	//if( listSize > 0) song =  list->items[ list->currentItem ];
 
 	// Prepare strings to display:
 	int hrElaps, minElaps, secElaps;
@@ -261,7 +281,8 @@ bool slimPlayingMenu::command(commands_e cmd)
 	switch(cmd)
 	{
 	case cmd_left:
-		if( parent != NULL) {
+		if( parent != NULL)
+		{
 			display->slimConnection->setMenu( parent , 'l');
 			parent->currentItem = 0;	//scroll to our current position.
 		} else
@@ -270,10 +291,6 @@ bool slimPlayingMenu::command(commands_e cmd)
 	case cmd_right:
 		display->draw('R');
 		break;
-	case cmd_playing:
-		//TODO: toggle between playing screens.
-		break;
-
 	case cmd_down:
 	case cmd_up:
 		if( playListBrowser != NULL)
@@ -456,7 +473,105 @@ bool slimBrowseMenu::stringLessThan( std::string a,  std::string b)
 }
 
 
+// Override key-handling with some special commands
+bool slimBrowseMenu::command(commands_e cmd)
+{
+	string url;
+	if( items.size() > 0)
+		url = path::join(fullPath(), items[currentItem]);
+	else
+		url = fullPath();
+
+	bool handled = true;
+	switch(cmd)
+	{
+	case cmd_left:
+		{
+			if( subDirs.size() == 0) {
+				slimGenericMenu::command( cmd_left );
+			} else {
+				string dir = subDirs.back();
+				subDirs.pop_back();
+				setItems( fullPath() );
+				//find dir in files:
+				currentItem = 0;
+				for(size_t i=0; i< items.size(); i++)
+					if( dir == items[i] )
+						currentItem = i;
+				draw('l');
+			}
+			break;
+		}
+	case cmd_add:
+		{	//Add current file or dir to the end of the playlist
+			std::vector<musicFile> entries = makeEntries( url );
+			ipc->addToGroup( display->slimConnection->currentGroup(),  entries);
+			break;
+		}
+	case cmd_play:
+		{	//Replace the playlist, and issue a 'play' command to ipc
+			std::vector<musicFile> entries = makeEntries( url );
+			//only clear playlist if we really have something new:
+			if( entries.size() > 0)
+			{
+				ipc->setGroup( display->slimConnection->currentGroup(),  entries);
+				//and start playing:
+				ipc->seekList( display->slimConnection->currentGroup(), 0, SEEK_SET );
+			}
+			break;
+		}
+	default:
+		handled = slimGenericMenu::command(cmd);
+	}
+	return handled;
+}
 
 
 //--------------------- volume control -------------------
 const float slimVolumeScreen::timeOut = 3.5;
+
+void slimVolumeScreen::draw(char transition, int8_t param)
+	{
+		float vol = *(connection->volume());
+		char msg[32];
+
+		if( difftime(time(NULL), startTime) > timeOut)
+		{
+			connection->setMenu( parent );
+			display->draw('c');	//force screen update
+			return;
+		}
+
+		sprintf(msg,"Volume (%.0f)", vol);
+
+		display->cls();
+		display->print(msg);
+
+		int border = 20;
+		display->progressBar( border, 16, 320-2*border, true, vol/100.f);
+
+		display->draw(transition,param);
+	}
+
+bool slimVolumeScreen::command(commands_e cmd)
+	{
+		bool handled = true;
+		startTime = time(NULL);		//reset timeout counter
+		char *vol = connection->volume();
+		if( cmd == cmd_Vup ) {
+			*vol = util::clip(*vol + delta, 0, 100);
+			connection->setVolume(*vol);
+		} else if( cmd == cmd_Vdown ) {
+			*vol = util::clip(*vol - delta, 0, 100);
+			connection->setVolume( *vol );
+		} else {
+			display->slimConnection->setMenu( parent );
+			handled = false;
+			//handled = parent->command( cmd );
+		}
+		draw();
+		return handled;
+	}
+
+
+

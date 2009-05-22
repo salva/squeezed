@@ -38,12 +38,17 @@ typedef slimConnectionHandler client;
 
 
 /// Basic definition of items in the database
-/// TODO: inherit from fileinfo.hpp::fileInfo, and add some 
+/// TODO: inherit from fileinfo.hpp::fileInfo, and add some
 ///			squeezebox specific info (url,ip,port)
-class musicFile 
+class musicFile
 {
 private:
-	bool setFromFile(const char *fname);
+	/// Re-set all data:
+	void clear(void);
+
+	///	Initialize from a file or url.
+	/// For files, the address is 0.0.0.0:defaultPort
+	bool setFromFile(const char *fname, uint16_t defaultPort=9000);
 public:
     // Song info (this should be a key-value pairs):
     std::string title;
@@ -66,11 +71,16 @@ public:
 	/// Empty initialization
 	musicFile(void);
 
-	///	Initialize from a music file
-	musicFile(const char *fname, uint16_t port=9000);
+	///	Initialize from a file or url.
+	/// For files, the address is 0.0.0.0:defaultPort
+	musicFile(const char *fname, uint16_t defaultPort=9000);
 
-	/// Init from a comma separated list of values
-	musicFile(string csv, uint16_t port=9000);
+	// Init from a comma separated list of values (unpickle)
+	//musicFile(string csv, uint16_t port=9000);
+
+	/// Convert to comma separated list of values (pickle)
+	operator string();
+
 
 	/// Generate a title to display:
 	std::string displayTitle(void) const
@@ -89,8 +99,6 @@ public:
 	}
 
 
-	/// convert to comma separated list of values
-	operator string();
 };
 
 
@@ -168,7 +176,7 @@ private:
 	std::vector<dev_s> devices;
 
 
-	/// Device reading, 
+	/// Device reading,
 	//	must be private for this class to be thread-safe
 	std::vector<dev_s>::iterator devByName( string clientName )
 	{
@@ -199,7 +207,7 @@ public:
 
 	// load an save status from/to disk.
 	// both group and deviceGroups need to be stored
-	void load(void);
+	void load( int shoutPort );
 	void save(void);
 
 	void registerSlimServer(TCPserverSlim *slimServer)

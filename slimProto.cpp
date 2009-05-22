@@ -61,6 +61,7 @@ IRmap IRmap_SB[] = {
 
 	{0x7689609f, cmd_add},
 	{0x768958a7, cmd_search},
+	{0x768918e7, cmd_favorites},
 	{0x7689708f, cmd_browse},
 	{0x76897887, cmd_playing},
 	{0x7689f807, cmd_size},
@@ -84,7 +85,7 @@ const char *commandsStr[] =
 	"left","right","up","down",
 	"play","pause","rewind","forward",
 	"shuffle","repeat",
-	"add","search","browse","now playing",
+	"add", "search", "favorites", "browse", "now playing",
 	"size","brightness",
 	"power","sleep","power On","power Off",
 };
@@ -100,12 +101,12 @@ const char *commandsStr[] =
 
 
 TCPserverSlim::TCPserverSlim(slimIPC *ipc, int port, int maxConnections) :
-	TCPserver(port,maxConnections),
+		TCPserver(port,maxConnections),
 		ipc(ipc)
-	{
-		ipc->registerSlimServer(this);
-		printf("slimProto: port %i, data port %i\n", port, ipc->getShoutPort() );
-	}
+{
+	ipc->registerSlimServer(this);
+	printf("slimProto: port %i, data port %i\n", port, ipc->getShoutPort() );
+}
 
 
 connectionHandler* TCPserverSlim::newHandler(SOCKET socketFD)
@@ -117,38 +118,191 @@ connectionHandler* TCPserverSlim::newHandler(SOCKET socketFD)
 //--------------------------- SlimProto --------------------------------------
 
 
+//Callback to connect to squeezeNetwork:
+class squeezeNetwork: public slimGenericMenu::callback
+{
+private:
+	slimConnectionHandler *connection;
+public:
+	squeezeNetwork(slimConnectionHandler *connection):
+		connection(connection)
+	{}
+
+	void run(void)
+	{
+		uint32_t ip = htonl( 0x01 );	//device interprets this a squeezenetwork
+		connection->send( "serv", 4, &ip );
+	}
+};
+
+
+//internal members:
+struct slimConnectionHandler::menu_s
+{
+    slimDisplay		*display;
+	slimMenu		*main;
+	slimMenu		*searchMenu;	//sub-menu with all search options
+	slimSearchMenu	*searchAlbum, *searchArtist;
+	slimBrowseMenu	*folderMenu;	//needs to be written
+	slimPlayingMenu	*nowPlayingScreen;
+	slimPlayListMenu *menuPlayList;
+	slimVolumeScreen *volumeScreen;
+	favoritesMenu	 *favorites;
+
+	squeezeNetwork	*sqNet;
+
+	menu_s(slimConnectionHandler *parent)
+	{
+		display = new slimDisplay(parent);
+		sqNet   = new squeezeNetwork(parent);
+
+		//Initialize the menus:
+		// for refernece, slim's menu can be found at:
+		//	http://wiki.slimdevices.com/index.php/UserInterfaceHierarchy
+		main = new slimMenu(display, "Squeezebox Home");
+
+		folderMenu		= new slimBrowseMenu(display, "Folder", main);
+		nowPlayingScreen= new slimPlayingMenu(display, main);
+		favorites       = new favoritesMenu(display,"Favorites", main);
+
+		searchMenu		= new slimMenu(display, "Search", main);
+		searchAlbum		= new slimSearchMenu(display, searchMenu, DB_ALBUM);
+		searchArtist	= new slimSearchMenu(display, searchMenu, DB_ARTIST);
+		menuPlayList	= new slimPlayListMenu(display, nowPlayingScreen);
+		volumeScreen	= new slimVolumeScreen(display);
+
+		searchMenu->addItem("Albums", searchAlbum);
+		searchMenu->addItem("Artist", searchArtist);
+		//searchMenu->addItem("Title", searchTitle);
+		nowPlayingScreen->setPlayMenu(menuPlayList);
+
+		//TODO: read favorites/web-radio from a configuration file:
+		favorites->playlist.push_back( favoritesMenu::playListItem("SKY.FM - Alt. Rock", "http://88.191.69.42:8002/") );
+		favorites->playlist.push_back( favoritesMenu::playListItem("KinK FM", "http://81.173.3.20:80/") );
+		//favorites->playlist.push_back( favoritesMenu::playListItem("Arrow Classic Rock", "http://81.23.251.55/ArrowAudio02") );//use WMA, not mp3
+		favorites->playlist.push_back( favoritesMenu::playListItem("SKY.FM - Best of 80's", "http://scfire-dtc-aa02.stream.aol.com:80/stream/1013") );
+		favorites->playlist.push_back( favoritesMenu::playListItem("SKY.FM - Top Hits Music", "http://scfire-mtc-aa03.stream.aol.com:80/stream/1014") );
+
+
+		//	Tie them together:
+		main->addItem("Now Playing",	nowPlayingScreen);
+		main->addItem("Folders",		folderMenu );
+		main->addItem("Search",			searchMenu );
+		main->addItem("Favorites",		favorites );
+		main->addItem("Squeeze Network",sqNet );
+		//main->addItem("Settings",		(slimGenericMenu::callback*) NULL );		//todo: write menu
+	}
+
+	~menu_s()
+	{
+		delete sqNet;
+		delete main;
+		delete display;
+	}
+};
+
+
+
+
+
+namespace visu
+{
+	struct visu_s
+	{
+		enum which {VISU_NONE, VISU_VUMETER, VISU_SPECTRUM, VISU_WAVE };
+
+		const char *desc;
+		int bar;	//display bar with seconds elapsed/remaining
+		char secs;	//display elapsed or remaining
+		int width;	//width remaining for text display
+		uint32_t nrParam;	//number of parameters
+		const uint32_t *param;	//parameters
+	};
+
+	//These settings are copied from squeezecenter-7.3.2/Slim/Display/SqueezeBox2.pm:
+	const uint32_t pNone[]     	= {visu_s::VISU_NONE};
+	const uint32_t pVUsmall[]	= {visu_s::VISU_VUMETER, 0, 0, 280, 18, 302, 18};
+	const uint32_t pSpectrum[]	= {visu_s::VISU_SPECTRUM,0, 0, 0x10000, 0, 160, 0, 4, 1, 1, 1, 1, 160, 160, 1, 4, 1, 1, 1, 1};
+	const uint32_t pWave[]		= {visu_s::VISU_WAVE,    0, 0, 0x10000, 0, 160, 0, 4, 1, 1, 1, 1, 160, 160, 1, 4, 1, 1, 1, 1};
+
+	const struct visu_s defVisu[] = {
+		{"BLANK"			, 0, 0, 320, array_size(pNone),		pNone },
+		{"VU_SMALL_ELAPSED"	, 1, 1, 278, array_size(pVUsmall),	pVUsmall  },
+		{"SPEC_ELAPSED"		, 1, 1, 320, array_size(pSpectrum), pSpectrum },
+//		{"WAVE_ELAPSED"		, 1, 1, 320, array_size(pWave), 	pWave },
+	};
+}
+
+
+
+void slimConnectionHandler::setVisualization(uint8_t mode)
+{
+	// The packet data:
+	const static int maxParam = 25;
+	char data[2 + 4*maxParam];
+	uint32_t *param = (uint32_t*)(&data[2]);
+
+	// Get visualization parameters:
+	mode = mode % array_size(visu::defVisu);
+	int nrParam = visu::defVisu[mode].nrParam;
+	const uint32_t *vparam = visu::defVisu[mode].param;
+
+	// First two are bytes:
+	data[0] = vparam[0];	//'which' a.k.a visu::vis_e
+	data[1] = nrParam - 1;	//'which' doesn't count as parameter
+
+	db_printf(30, "setVisualization(): mode %i, %i parameters\n", data[0], data[1] );
+
+	// The rest are words:
+	for(int i=1; i < nrParam; i++)
+		param[ i-1 ] = htonl( vparam[i] );
+
+	send("visu", 2 + 4*(nrParam - 1) , data);
+}
+
+
+
+
+struct slimConnectionHandler::state_s
+{
+	bool 			power;			///< on or off?
+	std::string		currentGroup;	///< Current playlist
+	slimScreen		*currentScreen;	///< Current visible menu
+	char			uuid[18];		///< unique device identifier
+	char			volume;
+	char			brightness;
+	enum {PL_STOP, PL_PAUSE, PL_PLAY} playState;
+	enum anim_e 	anim;			///< animation state
+	char			currentViso;	///< current visualization mode
+
+	/// The song currently playing. ipc->getList() gives access to the song
+	/// which is currently send. At the end of a song, those are different.
+	musicFile		currentSong;
+
+
+	// Constructor, set defaults
+	state_s():	power(true),
+				currentGroup("all"),
+				currentScreen(NULL),	//this doens't work if mainMenu isn't initialized
+				volume(90),
+				brightness(5),
+				playState(PL_STOP),
+				anim(ANIM_NONE),
+				currentViso(0)
+	{ }
+};
+
+
+
 slimConnectionHandler::slimConnectionHandler(SOCKET socketFD, slimIPC *ipc) :
-connectionHandler(socketFD),
-ipc(ipc)
+								connectionHandler(socketFD),
+								ipc(ipc)
 {
 	//Initialize the display (display needs device information):
-	display = new slimDisplay(this);
+	menu    = new menu_s(this);
+	state   = new state_s;
 
-	//Initialize the menus:
-	// for refernece, slim's menu can be found at:
-	//	http://wiki.slimdevices.com/index.php/UserInterfaceHierarchy
-	mainMenu = new slimMenu(display, "Squeezebox Home");
-	state.currentScreen = mainMenu;
-
-	folderMenu		= new slimBrowseMenu(display, "Folder", mainMenu);
-	nowPlayingScreen= new slimPlayingMenu(display, mainMenu);
-
-	searchMenu		= new slimMenu(display, "Search", mainMenu);
-	searchAlbum		= new slimSearchMenu(display, searchMenu, DB_ALBUM);
-	searchArtist	= new slimSearchMenu(display, searchMenu, DB_ARTIST);
-	menuPlayList	= new slimPlayListMenu(display, nowPlayingScreen);
-	volumeScreen    = new slimVolumeScreen(display);
-
-	searchMenu->addItem("Albums", searchAlbum);
-	searchMenu->addItem("Artist", searchArtist);
-	//searchMenu->addItem("Title", searchTitle);
-	nowPlayingScreen->setPlayMenu(menuPlayList);
-
-	//	tie them together:
-	mainMenu->addItem("Now Playing", nowPlayingScreen);
-	mainMenu->addItem("Folders",	folderMenu );
-	mainMenu->addItem("Search",		searchMenu );
-	mainMenu->addItem("Settings",	(slimGenericMenu::callback*) NULL );		//todo: write menu
+	state->currentScreen = menu->main;
 
 	//Some other data:
 	memset( &IRdata, 0, sizeof(IRdata) );
@@ -161,17 +315,49 @@ ipc(ipc)
 /// Deconstructor, closes the connection, deregisters the player
 slimConnectionHandler::~slimConnectionHandler()
 {
-	ipc->delDevice( this->state.uuid );
-	delete mainMenu;
-	delete display;
+	ipc->delDevice( state->uuid );
+	delete menu;
 }
 
 
 void slimConnectionHandler::setMenu(slimScreen *newMenu, char transition)
 {
-	if( state.currentScreen != newMenu)
+	if( state->currentScreen != newMenu)
 		newMenu->draw(transition, 24 );
-	state.currentScreen = newMenu;
+	state->currentScreen = newMenu;
+}
+
+
+
+const std::string& slimConnectionHandler::currentGroup(void)
+{
+	return state->currentGroup;
+}
+
+const char* slimConnectionHandler::uuid(void)
+{
+	return state->uuid;
+}
+
+char * slimConnectionHandler::volume(void)
+{
+	return &(state->volume);
+}
+
+enum slimConnectionHandler::anim_e* slimConnectionHandler::anim(void)
+{
+	return &(state->anim);
+}
+
+char *slimConnectionHandler::brightness(void)
+{
+	return &(state->brightness);
+}
+
+
+const musicFile& slimConnectionHandler::currentSong(void)
+{
+	return state->currentSong;
 }
 
 
@@ -260,9 +446,9 @@ bool slimConnectionHandler::parseInput(uint32_t opU32, netBuffer& buf, int len )
 	case slimOpCode('R','E','S','P'):
 		resp(buf,len);	break;
 	case slimOpCode('A','N','I','C'):
-		state.anim = state_s::ANIM_NONE;
-		if( display->refreshAfterAnim )
-			display->draw('c');	//update screen, if required
+		state->anim = ANIM_NONE;
+		if( menu->display->refreshAfterAnim )
+			menu->display->draw('c');	//update screen, if required
 		//db_printf(3,"< Animation complete\n");
 		break;
 	default:
@@ -311,27 +497,27 @@ void slimConnectionHandler::helo(netBuffer& buf, size_t len)
 
 
 	//Initialize the display:
-	sprintf(this->state.uuid, "%02x:%02x:%02x:%02x:%02x:%02x",
+	sprintf( state->uuid, "%02x:%02x:%02x:%02x:%02x:%02x",
 		device.mac[0], device.mac[1], device.mac[2], device.mac[3], device.mac[4], device.mac[5] );
 	//register to the central system:
-	ipc->addDevice( this->state.uuid, this);
+	ipc->addDevice( state->uuid, this);
 
 	//debug output:
 	db_printf(1,"helo(%llu): Id = %s.%i, uuid = %s, #recv = %llu\n",
-		(LLU)len, sqDeviceName(device.ID), device.revision, state.uuid, (LLU)device.recv );
+		(LLU)len, sqDeviceName(device.ID), device.revision, state->uuid, (LLU)device.recv );
 
 
 	//code from Slim/networking/slimproto.pm, line 1260:
 	setAudio(true,true);
-	setVolume(state.volume);
+	setVolume(state->volume);
 
 	char version[] = "7.5";    //high version, to make the client not complain
 	send("VERS", sizeof(version), version);	//not required ??
 
-	setBrightness(state.brightness);
+	setBrightness(state->brightness);
 	//visualization(false, 0 ); //not complete yet
-	display->print("Welcome");
-	mainMenu->draw('c');
+	menu->display->print("Welcome");
+	menu->main->draw('c');
 
 
 	//init: stop all previous streams
@@ -393,14 +579,14 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 	//Volume keys are handled specially, for quick response:
 	if( (cmd == cmd_Vup) || (cmd == cmd_Vdown) )
 	{
-		if( state.currentScreen != this->volumeScreen)
+		if( state->currentScreen != this->menu->volumeScreen)
 		{
-			volumeScreen->setParent( state.currentScreen );
-			state.currentScreen = this->volumeScreen;
+			menu->volumeScreen->setParent( state->currentScreen );
+			state->currentScreen = menu->volumeScreen;
 		}
-		volumeScreen->command(cmd);
+		menu->volumeScreen->command(cmd);
 		//break;
-	} 
+	}
 	else if( (code == IRdata.prevCode) && (dt < 200) )
 	{
 		//double key-press
@@ -414,76 +600,104 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 		rect_t win = {0,160,0,16};
 		bool needsRedraw = true;
 
-		//All other keys are handled by the current menu:
-		bool screenHandledIt = state.currentScreen->command(cmd);
+		//Make sure some commands are always handled here:
+		if( cmd == cmd_pwr )
+		{
+			state->power = !state->power;
+			if( state->power ) {
+				setBrightness(state->brightness - 1);	//turn backlight on
+				setAudio(true,true);	//turn on D/A converters
+			} else {
+				setBrightness( -1 );	//turn display off
+				stop();					//stop playback
+				setAudio(false,false);	//turn of D/A converters
+			}
+		}
+
+		//Let the current menu override all others keys, if desired:
+		bool screenHandledIt = state->currentScreen->command(cmd);
 
 		if( screenHandledIt ) {
 			needsRedraw = false;
 		} else {
 			switch(cmd)
 			{
-				//menu system
+			//menu system
 			case cmd_browse:
-				state.currentScreen = this->folderMenu;		break;
+				state->currentScreen = menu->folderMenu;		break;
 			case cmd_search:
-				state.currentScreen = this->searchMenu;		break;
+				state->currentScreen = menu->searchMenu;		break;
 			case cmd_playing:
-				state.currentScreen = this->nowPlayingScreen;	break;
+				if( state->currentScreen != menu->nowPlayingScreen)
+				{
+					db_printf(1,"current = %p, nowPlating = %p\n", state->currentScreen , menu->nowPlayingScreen );
+					state->currentScreen = menu->nowPlayingScreen;
+				}
+				else
+				{	//toggle between visualization modes
+					state->currentViso = (state->currentViso + 1) % array_size(visu::defVisu);
+					//db_printf(1,"Setting visualization %i\n", state->currentViso );
+					setVisualization( state->currentViso );
+				}
+				break;
+			case cmd_favorites:
+				state->currentScreen = menu->favorites;			break;
+
 
 				//playback:
 			case cmd_play:
 				//TODO: move this into menus.
 				//	while searching/browsing this modifies playlist. in now-Playing it does pause/unpause
-				if( state.playState == state.PL_PLAY)
+				if( state->playState == state_s::PL_PLAY)
 					pause();
 				else
 					play();
 				break;
 			case cmd_pause:
-				if( state.playState == state.PL_PLAY)
+				if( state->playState == state_s::PL_PLAY)
 					pause();
-				else if( state.playState == state.PL_PAUSE)
+				else if( state->playState == state_s::PL_PAUSE)
 					unpause();
 				break;
 			case cmd_rewind:
 				//pass a command to the IPC, IPC will send out play commands to all connected clients
-				this->ipc->seekList( state.currentGroup, -1, SEEK_CUR);
+				this->ipc->seekList( state->currentGroup, -1, SEEK_CUR);
 				break;
 			case cmd_forward:
-				this->ipc->seekList( state.currentGroup,  1, SEEK_CUR);
+				this->ipc->seekList( state->currentGroup,  1, SEEK_CUR);
 				break;
 
 
 				//others:
 			case cmd_brightness:
-				state.brightness = (state.brightness+1) % 5;
-				setBrightness(state.brightness);
+				state->brightness = ( (state->brightness|1) + 2) % 6;
+				setBrightness(state->brightness - 1);	//minus one to allow display to be fully off
 				break;
 			case cmd_0:
 				//test if the display works:
 				sprintf(str,"0 key %u = %s\n", code, commandsStr[cmd] );
-				display->gotoxy(0,0);
-				display->rect( win , 0);
-				display->print(str);
+				menu->display->gotoxy(0,0);
+				menu->display->rect( win , 0);
+				menu->display->print(str);
 				break;
 			case cmd_invalid:
 				sprintf(str,"unknown code 0x%x\n", code );
-				display->gotoxy(0,0);
-				display->rect( win , 0);
-				display->print(str);
+				menu->display->gotoxy(0,0);
+				menu->display->rect( win , 0);
+				menu->display->print(str);
 				break;
 			default:
 				sprintf(str,"key %u = %s\n", code, commandsStr[cmd] );
-				display->gotoxy(0,0);
-				display->rect( win , 0);
-				display->print(str);	//print, but don't send image data.
+				menu->display->gotoxy(0,0);
+				menu->display->rect( win , 0);
+				menu->display->print(str);	//print, but don't send image data.
 				break;
-			}
-		} 
+			} //switch(cmd)
+		}
 
 		// Update here, for now. should be done more intelligently
 		if(needsRedraw)
-			state.currentScreen->draw();
+			state->currentScreen->draw();
 	}
 	IRdata.prevCode = code;
 	IRdata.prevTime = timeOn;
@@ -493,8 +707,6 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 
 void slimConnectionHandler::stat(netBuffer& buf, int len)
 {
-	char event[5];
-	event[4] = 0;
 
 	buf.read( &status.eventCode,4);	//disable byte-order conversion
 	status.nrCrLF		= buf;
@@ -509,10 +721,11 @@ void slimConnectionHandler::stat(netBuffer& buf, int len)
 	status.bufDataOut	= buf;
 	uint32_t songSec	= buf;	//number of seconds into the song
 	status.voltage		= buf;
-	status.songMSec		= ((uint32_t)buf) + songSec*1000;
+	status.songMSec		= buf;
 	//uint32_t timeStamp = buf;
 
-	*((uint32_t*)event) = status.eventCode;
+	(void)songSec;		//remove compiler warning against unused variable
+	//songSec = max( songSec, status.songMSec );	//not sure if they are always both given..
 
 	if( status.eventCode == slimOpCode('S','T','M','h') )
 	{
@@ -521,10 +734,11 @@ void slimConnectionHandler::stat(netBuffer& buf, int len)
 	else if( status.eventCode == slimOpCode('S','T','M','s') )
 	{
 		db_printf(2,"<\tplayback has started\n");
+		state->currentSong = ipc->getSong( state->currentGroup );
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','t') )
 	{
-		db_printf(2,"<\theartbeat: pos = %.1f sec\n", status.songMSec / 1e3 );
+		db_printf(2,"<\theartbeat: pos = %.1f sec\n", (status.songMSec+500) / 1e3 );
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','c') )
 	{
@@ -533,19 +747,21 @@ void slimConnectionHandler::stat(netBuffer& buf, int len)
 	else if( status.eventCode == slimOpCode('S','T','M','d') )
 	{
 		db_printf(2,"<\tplayer is ready for the next track\n");
-		ipc->seekList( state.currentGroup, 1, SEEK_CUR, false);	//start a new song, but don't stop the current one yet
+		ipc->seekList( state->currentGroup, 1, SEEK_CUR, false);	//start a new song, but don't stop the current one yet
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','u') )
 	{
 		db_printf(2,"<\tdata underrun\n");
-		ipc->seekList( state.currentGroup, 1, SEEK_CUR, true);	//abort current stream, start something new.
+		ipc->seekList( state->currentGroup, 1, SEEK_CUR, true);	//abort current stream, start something new.
 	} else {
+		char event[5] = {0,0,0,0,0};
+		*((uint32_t*)event) = status.eventCode;
 		db_printf(2,"<Stat(%i): %s. song %u ms, %lli recv\n", len, event, status.songMSec, (long long)status.nrRecv);
 		db_printf(2,"<\tbufSize %u, bufOut %u/%u, #crlf %i\n", status.bufSize, status.bufDataOut, status.bufSizeOut, status.nrCrLF);
 	}
 
 	//update the display:
-	state.currentScreen->draw();
+	state->currentScreen->draw();
 }
 
 
@@ -555,7 +771,7 @@ void slimConnectionHandler::stat(netBuffer& buf, int len)
 
 /// Send function.
 ///  TODO: check for cmd='grfe' and add LZF compression: http://home.schmorp.de/marc/liblzf.html
-///  TODO: don't block on write
+///  See squeezeCenter\Slim\Player\SqueezeBox.pm, sub sendFrame {}
 int slimConnectionHandler::send(const char cmd[4], uint16_t len, void *data)
 {
 	//setup the header:
@@ -584,7 +800,7 @@ void slimConnectionHandler::setAudio(bool spdif, bool dac)
 void slimConnectionHandler::setBrightness(char brightness)
 {
 	uint16_t br = htons(brightness);
-	send("GRFB", 2, &br );
+	send("grfb", 2, &br );
 }
 
 
@@ -630,44 +846,66 @@ void slimConnectionHandler::setVolume(uint8_t newVol)
 
 
 // Low-level streaming command.
-// See squeezeCenter\Slim\Player\SqueezeBox.pm, sub stream_s
+// See squeezeCenter\Slim\Player\SqueezeBox.pm, sub stream_s{} and sub stream{}
 // look for "my $frame = pack"
 void slimConnectionHandler::STRM()
 {
 	char cmd[100];
 
 	netBuffer buf(cmd);
-	buf.write( stream.command );
-	buf.write( stream.autostart );
-	buf.write( stream.format );
-	buf.write( stream.pcmSampleSize );
-	buf.write( stream.pcmSampleRate );
-	buf.write( stream.pcmChannels );
-	buf.write( stream.pcmEndian );
-	buf.write( stream.preBufferSilence );
-	buf.write( stream.spdif );
-	buf.write( stream.transitionDuration );
-	buf.write( stream.transitionType );
-	buf.write( stream.flags );
-	buf.write( stream.outputThreshold );
-	//buf.write( stream.visport );
-	//buf.write( stream.visip );
-	buf.write( stream.reserved );
-	buf.write( stream.replayGain );
-	buf.write( stream.serverPort );
-	buf.write( stream.serverIP );
+	//if( stream.command == 's')
+	{
+		buf.write( stream.command );
+		buf.write( stream.autostart );
+		buf.write( stream.format );
+		buf.write( stream.pcmSampleSize );
+		buf.write( stream.pcmSampleRate );
+		buf.write( stream.pcmChannels );
+		buf.write( stream.pcmEndian );
+		buf.write( stream.preBufferSilence );
+		buf.write( stream.spdif );
+		buf.write( stream.transitionDuration );
+		buf.write( stream.transitionType );
+		buf.write( stream.flags );
+		buf.write( stream.outputThreshold );
+		//buf.write( stream.visport );
+		//buf.write( stream.visip );
+		buf.write( stream.reserved );
 
+		//when pausing, this is interpreted as 'unpauseAt'
+		//	for command 'a' and 'p' it's ms, for 'u' it's seconds ???
+		//	't' is a timestamp, but what does it do?
+		if( stream.command == 's')
+			buf.write( stream.replayGain );
+		else
+			buf.write( (uint32_t)0 );
+
+		buf.write( stream.serverPort );
+		buf.write( (uint32_t)ntohl(stream.serverIP) );	//convert back and forth: network->host->network
+	}
 	assert( buf.idx == 24);
 
+	//Send the data:
 	if( stream.command == 's')
 	{
 		char *http = &buf.data[buf.idx];
+
 		// Append the http-request-header to the end of the stream:
-		sprintf(http,"GET /stream.mp3?player=%s HTTP/1.0\r\n\r\n", state.uuid );
+		if( stream.serverIP == 0)
+		{	// Local file, rename the url
+			sprintf(http,"GET /stream.mp3?player=%s HTTP/1.0\r\n\r\n", state->uuid );
+		} else
+		{	// Remote file, keep the url, but do request meta-data:
+			sprintf(http,"GET %s HTTP/1.0\r\nIcy-MetaData: 1\r\n\r\n", stream.url.c_str() );
+		}
+		printf(">STRM(%s)\n", http );
+
 		send("strm", buf.idx + strlen(http), cmd);
 	}
 	else
+	{
 		send("strm", buf.idx, cmd);
+	}
 }
 
 
@@ -677,22 +915,27 @@ void slimConnectionHandler::STRM()
 
 void slimConnectionHandler::play()
 {
-	int currentItem = ipc->getList( state.uuid )->currentItem;
-	menuPlayList->currentItem = currentItem;
-	musicFile data = ipc->getList( state.uuid )->get(  currentItem  );
+	int currentItem = ipc->getList( state->uuid )->currentItem;
+	menu->menuPlayList->currentItem = currentItem;
+	musicFile data = ipc->getList( state->uuid )->get(  currentItem  );
 
 	stream.format = data.format;
 	stream.pcmChannels = data.nChannels + '0';
 	stream.setSampleSize( data.nBits );
 	stream.setSampleRate( data.sampleRate );
 
+	stream.url = data.url;
+	stream.serverIP  = data.ip;
+	stream.serverPort= data.port;
+	db_printf(1,"play(): %08x:%i GET %s\n", data.ip, data.port, stream.url.c_str() );
+
 	// 'smart' replay-gain:
 	bool sameAlbum = false;
 	if( currentItem > 0 )
-		if( data.album == ipc->getList(state.uuid)->get(currentItem-1).album )
+		if( data.album == ipc->getList(state->uuid)->get(currentItem-1).album )
 			sameAlbum = true;
-	if( currentItem < (int)ipc->getList(state.uuid)->items.size() - 2 )
-		if( data.album == ipc->getList(state.uuid)->get(currentItem+1).album )
+	if( currentItem < (int)ipc->getList(state->uuid)->items.size() - 2 )
+		if( data.album == ipc->getList(state->uuid)->get(currentItem+1).album )
 			sameAlbum = true;
 
 	if( sameAlbum )
@@ -702,11 +945,11 @@ void slimConnectionHandler::play()
 
 
 	stream.command    = 's';	//start the stream
-	stream.serverIP   = 0;		//inet_addr( "127.0.0.1" );
-	stream.serverPort = ipc->getShoutPort();
+//	stream.serverIP   = 0;		//inet_addr( "127.0.0.1" );
+//	stream.serverPort = ipc->getShoutPort();
 	stream.autostart  = '1';	//quite important, don't know exactly what it means
 	STRM();
-	state.playState = state.PL_PLAY;
+	state->playState = state_s::PL_PLAY;
 }
 
 
@@ -714,7 +957,7 @@ void slimConnectionHandler::pause()
 {
 	stream.command    = 'p';
 	STRM();
-	state.playState = state.PL_PAUSE;
+	state->playState = state_s::PL_PAUSE;
 }
 
 
@@ -723,13 +966,14 @@ void slimConnectionHandler::unpause()
 {
 	stream.command    = 'u';
 	STRM();
-	state.playState = state.PL_PLAY;
+	state->playState = state_s::PL_PLAY;
 }
+
 
 void slimConnectionHandler::stop()
 {
 	stream.command    = 'q';
 	STRM();
-	state.playState = state.PL_STOP;
+	state->playState = state_s::PL_STOP;
 }
 

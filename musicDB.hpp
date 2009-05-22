@@ -72,9 +72,13 @@ struct dbEntry {
 
 	dbEntry() {}		// also allow an empty constructor
 	dbEntry(std::string relPath, std::string fname, fileInfo *fInfo);
-	dbEntry(FILE *f);	// load from a file handle;
 
-	int pickle(FILE *f);	//store to file
+	/// Initialize from a file handle
+	dbEntry(FILE *f);
+
+	/// Store entry to a file database
+	/// Returns number of bytes written
+	int pickle(FILE *f);
 };
 
 
@@ -253,26 +257,26 @@ public:
 	///	number of unique results:
 	size_t uSize(void)
 	{
-		return uniqueIdx.size();			
+		return uniqueIdx.size();
 	}
 
 
 	/// db index into, for a unique search result
 	uint32_t uIndex(size_t index)
-	{	
+	{
 		uint32_t idx = 0;
 		if( index < uniqueIdx.size() )
 			idx = uniqueIdx[index].idx;
-		return idx;		
+		return idx;
 	}
 
 	/// Number of items within this unique result
 	size_t uCount(size_t index)
-	{	
+	{
 		size_t count = 0;
 		if( index < uniqueIdx.size() )
 			count = uniqueIdx[index].count;
-		return count;	
+		return count;
 	}
 
 

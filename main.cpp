@@ -72,7 +72,7 @@ void testShout(void)
 	config.write(configFile);
 
 	// Resolve home directory ('~'), if required.
-	dbPath = path::normalize(dbPath);	
+	dbPath = path::normalize(dbPath);
 
 	// Initialize music databse:
 	musicDB db( dbPath.c_str() );
@@ -93,8 +93,10 @@ void testShout(void)
 void testFlac(void)
 {
 	const char path[] = ".";
+
 	std::vector<std::string> dir = path::listdir( path );
-	
+
+	db_printf(1,"Found %llu files\n", (LLU)dir.size() );
 	for(size_t i=0; i< dir.size(); i++)
 	{
 		std::string ffull = path::join( path, dir[i] );
@@ -102,13 +104,14 @@ void testFlac(void)
 
 		if( fInfo.isAudioFile )
 		{
-			printf("%s (%s)\t", fInfo.tags["title"].c_str(), fInfo.tags["artist"].c_str() );
+			db_printf(1,"%s (%s)\t", fInfo.tags["title"].c_str(), fInfo.tags["artist"].c_str() );
 			int sec = fInfo.length % 60;
 			int min = fInfo.length / 60;
 			printf("%i Hz, %i bits, %i channels. %i:%02i\n\n", fInfo.sampleRate, fInfo.nrBits, fInfo.nrChannels, min, sec );
+		} else {
+			db_printf(1,"%s: not a valid audio-file\n", ffull.c_str() );
 		}
 	}
-	int dummy=1;
 }
 
 
@@ -123,6 +126,7 @@ void startThreads()
 	defaults["musicDB"]["dbIdx"]  = configValue("SqueezeD.idx");
 
 	// Load configuration data
+	db_printf(6,"Loading confugaration data from %s\n", configFile);
 	configParser config(configFile, defaults);
 
 	int shoutPort	= config.getset("shout", "port", 9000 );
@@ -137,17 +141,21 @@ void startThreads()
 	config.write(configFile);
 
 	// Initialize the database
+	db_printf(6,"checking path '%s'\n", dbPath.c_str() );
 	dbPath = path::normalize(dbPath);		// Resolve home directory ('~'), if required.
+
+	db_printf(6,"opening musicDB '%s'\n", dbPath.c_str() );
 	musicDB db( dbPath.c_str() );
 
 	// only scan if index is missing
 	int loadResult = -1;
-	if( !path::isfile( dbFile ) )
+	if( !path::isfile( dbFile ) ) {
+		db_printf(1,"Scanning '%s'\n", dbFile.c_str() );
 		db.scan(dbFile.c_str() );
-	else
+	} else
 		loadResult = db.load(dbFile.c_str() , dbIdx.c_str() );
-	
-	if( loadResult < 0 ) 
+
+	if( loadResult < 0 )
 	{
 		db_printf(1,"Sorting results\n");
 		db.index( dbIdx.c_str() );
@@ -187,7 +195,13 @@ int main()
 {
 	//testDB();
 	//testShout();
+
+	//db_printf(3,"Testing tagging library on current dir:\n");
 	//testFlac();
+
+	//Test remote streaming:
+	//const char *shoutStream = "http://scfire-dtc-aa02.stream.aol.com:80/stream/1013";
+	//musicFile f(shoutStream);
 
 	startThreads();
 

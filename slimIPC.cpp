@@ -1,5 +1,11 @@
 
 
+#ifdef WIN32
+	#include <Winsock2.h>
+#else
+	#include <netdb.h>	//to lookup shout streams
+#endif
+
 
 #include "configParser.hpp"
 #include "serverShoutCast.hpp"
@@ -12,62 +18,123 @@
 //----------------- small helper functions ---------------------
 
 
-musicFile::musicFile(void)
+void musicFile::clear(void)
 {
 	format = '?';
-	nChannels = 0; nBits = 0; sampleRate = 0;
-	ip =0; port = 0;
-	length = 0;
+	nChannels = 0;
+	nBits = 0;
+	sampleRate = 0;
+	gainTrack = 0;
+	gainAlbum = 0;
+	ip		  = 0;
+	port	  = 0;
+	length    = 0;
+}
+
+musicFile::musicFile(void)
+{
+	clear();
 }
 
 
 musicFile::musicFile(const char *fname, uint16_t port)
 {
-	setFromFile(fname);
-	this->port = port;
+	clear();
+	setFromFile(fname,port);
 }
 
 
-bool musicFile::setFromFile(const char *fname)
+bool musicFile::setFromFile(const char *fname, uint16_t defaultPort)
 {
-	fileInfo finfo(fname);
-
-	if( finfo.isAudioFile )
+	const size_t httpLen = 7; // "http://"
+	if( strncasecmp(fname, "http://", httpLen ) == 0 )
 	{
-		title  = finfo.tags["title"];
-		artist = finfo.tags["artist"];
-		album  = finfo.tags["album"];
+		//handle as shoutcast stream:
+		const char *ipStr   = strstr(fname,"//") + 2;
+		if( ipStr == NULL )
+			return false;
 
-		format = '?';
-		if( finfo.mime == "audio/mpeg")
-			format = 'm';
-		if( finfo.mime == "audio/flac")
-			format = 'f';
-		nChannels	= finfo.nrChannels;
-		nBits		= finfo.nrBits;
-		sampleRate	= finfo.sampleRate;
-		length      = finfo.length;
-		gainTrack	= finfo.gainTrack;
-		gainAlbum	= finfo.gainAlbum;
+		const char *portStr = strrchr(fname+httpLen,':');	//also, end of ipStr
+		const char *fileStr = strchr(ipStr,'/');
+		int port = 80;		//default port
 
-		url			= fname;
-		ip			= 0;	//localhost
-	} else {
-		format = 0;
-		nChannels = 0;
-		gainTrack = 0;
-		gainAlbum = 0;
-		ip		  = 0;
+		if( portStr != NULL)
+			port = atoi( portStr + 1 );
+		else
+			portStr = strchr(ipStr, '/' );
+		if( portStr == NULL )
+			portStr = fname + strlen(fname);
+
+		if( fileStr != NULL)
+			url = fileStr;
+
+		std::string ip(ipStr, portStr - ipStr );
+		printf("looking up: '%s'\n", ip.c_str() );
+		//lookup an ip-address:
+		//in_addr_t address;
+		in_addr address;
+		if( isalpha( ip[0] ) )
+		{
+			struct hostent *remoteHost = gethostbyname( ip.c_str() );
+#ifdef WIN32
+			address.s_addr = *(ULONG*)remoteHost->h_addr_list[0];	//address = *((in_addr * )remoteHost->h_addr);
+#else
+			address.s_addr = *(in_addr_t*)remoteHost->h_addr_list[0];	//address = *((in_addr * )remoteHost->h_addr);
+#endif
+		} else {
+			//in_addr in_address;	address = in_address.s_addr;
+			address.s_addr = inet_addr( ip.c_str() );
+			//inet_aton ( ip.c_str(), &address );
+		}
+
+		uint8_t *tmp = (uint8_t*)(&address.s_addr);
+		db_printf(3, "%s -> ip-address: %i.%i.%i.%i\n", ip.c_str(), tmp[0], tmp[1], tmp[2], tmp[3] );
+
+		this->ip   = (uint32_t)address.s_addr;
+		this->port = port;
+
+		format = 'm';
+		nChannels = 2;
+		return true;
 	}
-	return finfo.isAudioFile;
+	else
+	{
+		// Assume it's a (local) file:
+		fileInfo finfo(fname);
+
+		if( finfo.isAudioFile )
+		{
+			title  = finfo.tags["title"];
+			artist = finfo.tags["artist"];
+			album  = finfo.tags["album"];
+
+			format = '?';
+			if( finfo.mime == "audio/mpeg")
+				format = 'm';
+			if( finfo.mime == "audio/flac")
+				format = 'f';
+			nChannels	= finfo.nrChannels;
+			nBits		= finfo.nrBits;
+			sampleRate	= finfo.sampleRate;
+			length      = finfo.length;
+			gainTrack	= finfo.gainTrack;
+			gainAlbum	= finfo.gainAlbum;
+
+			url			= fname;
+			ip			= 0;	//localhost
+			port 		= defaultPort;
+		}
+		return finfo.isAudioFile;
+	}
 }
+
 
 
 // init from a comma separated list of values
-musicFile::musicFile(string csv, uint16_t port)
+/*musicFile::musicFile(string csv, uint16_t port)
 {
-	int i=0;
-	/*vector<string> items = pstring::split(csv, ',');
+	*//*int i=0;
+	vector<string> items = pstring::split(csv, ',');
 	if( items.size() >= 9 )
 	{
 		title  = items[i++];
@@ -79,13 +146,13 @@ musicFile::musicFile(string csv, uint16_t port)
 		sampleRate= atoi( items[i++].c_str() );
 		length    = atoi( items[i++].c_str() );
 		url = items[i++];
-	}*/
+	} *//*
 	url = csv;
 	setFromFile( url.c_str() );
 
 	this->port = port;
 	ip = 0;
-}
+}*/
 
 
 musicFile::operator string()
@@ -169,7 +236,7 @@ slimIPC::slimIPC(musicDB *db, configParser	*config): db(db)
 	pthread_mutex_init( &mutex.group, NULL);
 
 	//Load all playlists from disk
-	load( );
+	load( config->get("shout","port", 0)  );
 
 	if(  group.size() < 1)
 	{
@@ -207,7 +274,7 @@ slimIPC::~slimIPC(void)
 
 
 // load status from disk
-void slimIPC::load( void )
+void slimIPC::load( int shoutPort )
 {
 	configParser config( playListFile.c_str() );
 
@@ -224,7 +291,7 @@ void slimIPC::load( void )
 		while( config.hasOption(groupName, itemName ) )
 		{
 			string item =  config.get(groupName, itemName );
-			musicFile f = musicFile(item);
+			musicFile f = musicFile( item.c_str() , shoutPort );
 			group[groupNames[i]].items.push_back( f );
 			sprintf(itemName, "item%03i", ++nr);
 		}
@@ -287,9 +354,9 @@ int slimIPC::delDevice(string clientName)
 	{
 		//store current setting:
 		string sectionName = "player." + clientName;
-		config->set( sectionName, "volume", it->device->state.volume );
-		config->set( sectionName, "group" , it->device->state.currentGroup );
-		config->set( sectionName, "brightness" , it->device->state.brightness );
+		config->set( sectionName, "volume", *(it->device->volume()) );
+		config->set( sectionName, "group" , it->device->currentGroup() );
+		config->set( sectionName, "brightness" , *it->device->brightness() );
 		config->write( );
 
 		devices.erase( it );

@@ -62,7 +62,7 @@ private:
 	// display is binary:
 	static const int bitBufSize = (screenWidth) * (screenHeight/8);
 	char packet[ 4 + bitBufSize ];	//full packet
-
+	char cpacket[4 + bitBufSize ];	//compressed packet
 
 
     /// Cursor position, relative to window
@@ -116,7 +116,7 @@ public:
             //    putPixel(x,y,color);
     }
 
-	//progress bar, progress ranges from 0..1
+	/// Progress bar, progress ranges from 0..1
 	void progressBar(int x, int y, int len, bool horizontal, float progress)
 	{
 		//check input parameters:
@@ -261,11 +261,11 @@ public:
 			parentScreen(parent)
 	{
 		currentItem = 0;
-        //select whole screen:
+
         window.x1 = 20;
-        window.x2 = 320;
-        window.y1 = 15;
-        window.y2 = 32;
+        //window.x2 = 320;
+        //window.y1 = 15;
+        //window.y2 = 32;
 	}
 
 	/// update screen
@@ -279,7 +279,7 @@ public:
 		sprintf(index, "%llu/%llu", (LLU)(currentItem+1), (LLU)itemSize() );
 
 		display->cls();
-		display->gotoxy( 0, 0); 
+		display->gotoxy( 0, 0);
 		display->print( getMenuName().c_str() , fontSizes[0] );
 
 		display->gotoxy( 320-8*strlen(index), 0 );
@@ -299,7 +299,7 @@ public:
     {
         bool handled = true;
 		int newCurrent;
-	
+
 		//allow fast scrolling, by typing in first letter of the menu:
 		if( (cmd >= cmd_0) && (cmd <= cmd_9) )
 		{
@@ -386,8 +386,8 @@ private:
 		slimScreen	*subMenu;
 	public:
 		callbackSubMenu(slimConnectionHandler *c, slimScreen *s): connection(c), subMenu(s) {}
-		void run(void)	
-		{	
+		void run(void)
+		{
 			connection->setMenu(subMenu, 'r' );
 		}
 	};
@@ -414,10 +414,10 @@ public:
 
 	/// Get current menu-item name
 	string getName(size_t index)
-	{	
+	{
 		string name;
 		if( index < items.size() )
-			name = items[index].name;	
+			name = items[index].name;
 		return name;
 	}
 
@@ -427,9 +427,9 @@ public:
 
 	/// Run current menu
 	void run(void)
-	{	
+	{
 		if( items[currentItem].action != NULL )
-			items[currentItem].action->run();	
+			items[currentItem].action->run();
 		else
 			draw('R');
 	}
@@ -671,7 +671,7 @@ private:
 	//string menuName;
 	slimIPC *ipc;
 	string basePath;		//root of music directory
-	
+
 	std::vector<string> subDirs;	//current subdir relative to base
 	std::vector<std::string> items; //current menu items:
 	//size_t itemsPos;
@@ -717,10 +717,10 @@ public:
 
 	/// Get current menu-item name
 	string getName(size_t index)
-	{	
+	{
 		string name;
 		if( index < items.size() )
-			name = items[index];	
+			name = items[index];
 		return name;
 	}
 
@@ -729,58 +729,9 @@ public:
 	{	return items.size();	}
 
 
-	/// Override key-handling with some special commands:
-	bool command(commands_e cmd)
-	{
-		string url;
-		if( items.size() > 0)
-			url = path::join(fullPath(), items[currentItem]);
-		else
-			url = fullPath();
+	/// Override key-handling with some special commands
+	bool command(commands_e cmd);
 
-		bool handled = true;
-        switch(cmd)
-        {
-		case cmd_left:
-			{
-				if( subDirs.size() == 0) {
-					slimGenericMenu::command( cmd_left );
-				} else {
-					string dir = subDirs.back();
-					subDirs.pop_back();
-					setItems( fullPath() );
-					//find dir in files:
-					currentItem = 0;
-					for(size_t i=0; i< items.size(); i++)
-						if( dir == items[i] )
-							currentItem = i;
-					draw('l');
-				}
-				break;
-			}
-		case cmd_add:
-			{	//Add current file or dir to the end of the playlist
-				std::vector<musicFile> entries = makeEntries( url );
-				ipc->addToGroup( display->slimConnection->currentGroup(),  entries);
-				break;
-			}
-		case cmd_play:
-			{	//Replace the playlist, and issue a 'play' command to ipc
-				std::vector<musicFile> entries = makeEntries( url );
-				//only clear playlist if we really have something new:
-				if( entries.size() > 0)
-				{
-					ipc->setGroup( display->slimConnection->currentGroup(),  entries);
-					//and start playing:
-					ipc->seekList( display->slimConnection->currentGroup(), 0, SEEK_SET );
-				}
-				break;
-			}
-		default:
-			handled = slimGenericMenu::command(cmd);
-		}
-		return handled;
-	}
 
 	/// Run current menu
 	void run(void)
@@ -803,74 +754,130 @@ public:
 };
 
 
+
+/// Generic playlist menu
+class favoritesMenu: public slimGenericMenu
+{
+private:
+	slimIPC *ipc;
+public:
+	struct playListItem
+	{
+		std::string name;
+		std::string url;
+
+		playListItem(std::string name, std::string url):
+			name(name), url(url)
+		{ }
+
+	};
+
+//private:
+	std::vector<playListItem> playlist;
+
+public:
+	favoritesMenu(slimDisplay *display, string name, slimScreen *parent=NULL):
+					slimGenericMenu(display,name,parent)
+    {
+    	ipc = display->slimConnection->ipc;
+		currentItem = 0;
+	}
+
+
+	//Overloaded methods:
+
+	/// Get current menu-item name
+	virtual string getName(size_t index)
+	{
+		if( index < playlist.size() )
+			return playlist[index].name;
+		return "";
+	}
+
+	/// Get number of items in the menu
+	virtual size_t itemSize(void)
+	{
+		return playlist.size();
+	}
+
+	/// Run current menu
+	virtual void run(void)
+	{
+	}
+
+	/// override 'play' and 'add' commands:
+	bool command(commands_e cmd)
+	{
+		bool handled = false;
+		switch(cmd)
+		{
+		case cmd_play:
+			{
+				std::vector<musicFile> entries;
+				musicFile f( playlist[currentItem].url.c_str() );
+				f.title = playlist[currentItem].name;
+				entries.push_back( f );
+
+				//clear list, and start playing:
+				ipc->setGroup( display->slimConnection->currentGroup(),  entries);
+				ipc->seekList( display->slimConnection->currentGroup(), 0, SEEK_SET );
+
+				handled = true;
+				break;
+			}
+		case cmd_add:
+			{
+				std::vector<musicFile> entries;
+				musicFile f( playlist[currentItem].url.c_str() );
+				f.title = playlist[currentItem].name;
+				entries.push_back( f );
+				ipc->addToGroup( display->slimConnection->currentGroup(),  entries);
+				handled = true;
+				break;
+			}
+		default:
+			handled = slimGenericMenu::command(cmd);
+		}
+		return handled;
+	}
+
+};
+
+
+
+
 class slimVolumeScreen: public slimScreen
 {
 private:
 	slimScreen *parent;
-	slimConnectionHandler::state_s *state;
+	//slimConnectionHandler::state_s *state;
+	slimConnectionHandler *connection;
 	const static int delta = 2;
 
 	static const float timeOut; ///< time-out in seconds, after which this menu disappears
 	time_t	startTime;
 public:
-	slimVolumeScreen(slimDisplay *display): 
+	slimVolumeScreen(slimDisplay *display):
 		slimScreen(display),
 	    parent(NULL)
-	{ 
-		state = &display->slimConnection->state;
+	{
+		connection = display->slimConnection;
+		//state = display->slimConnection->state;
 		startTime = time(NULL);
 	}
 
-	void draw(char transition='c', int8_t param=0)
-	{
-		float vol = display->slimConnection->state.volume;
-		char msg[32];
+	void draw(char transition='c', int8_t param=0);
 
-		if( difftime(time(NULL), startTime) > timeOut)
-		{
-			display->slimConnection->setMenu( parent );
-			display->draw('c');	//force screen update
-			return;
-		}
-
-		sprintf(msg,"Volume (%.0f)", vol);
-
-		display->cls();
-		display->print(msg);
-
-		int border = 20;
-		display->progressBar( border, 16, 320-2*border, true, vol/100.f);
-
-		display->draw(transition,param);
-	}
-
-	//since this is a popup, the parent can be set dynamically:
+	/// Since this is a popup, the parent can be set dynamically:
 	void setParent(slimScreen *newParent)
 	{
 		parent = newParent;
 		startTime = time(NULL);		//reset timeout counter
 	}
 
-	bool command(commands_e cmd)
-	{
-		bool handled = true;
-		startTime = time(NULL);		//reset timeout counter
-		if( cmd == cmd_Vup ) {
-			state->volume = util::clip(state->volume + delta, 0, 100);
-			display->slimConnection->setVolume(state->volume);
-		} else if( cmd == cmd_Vdown ) {
-			state->volume = util::clip(state->volume - delta, 0, 100);
-			display->slimConnection->setVolume(state->volume);
-		} else {
-			display->slimConnection->setMenu( parent );
-			handled = false;
-			//handled = parent->command( cmd );
-		}
-		draw();
-		return handled;
-	}
+	bool command(commands_e cmd);
 };
- 
+
 
 /**@}
  *end of doxygen slim-group

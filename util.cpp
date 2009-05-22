@@ -122,6 +122,8 @@ namespace path
 
 	std::string normalize(std::string fname)
 	{
+		db_printf(30,"normalize()\n");
+	
 		//std::string out;
 		/*size_t n = fname.size();
 		for(size_t i=0; i< fname.size()-1; i++)
@@ -139,7 +141,7 @@ namespace path
 		// (also converts '/' to '\', removes trailing backslashes
 
         if( fname.size() < 1 )
-            return std::string("");
+            return "";
 #if !defined(WIN32)
         // Parse home-dir, since opendir() doesn't seem to know about that.
         if( fname[0] == '~')
@@ -165,21 +167,32 @@ namespace path
 
 		std::string out( tmp );
 		delete tmp;
-#else
+#elif defined(__UCLIBC__)
+		//for openwrt: don't use glibc specific extension:
+		//db_printf(1,"SKIPPING realpath()\n");
+		char tmp[PATH_MAX];
+		char *res = realpath( fname.c_str() , tmp );
+		if( res == NULL)
+			return "";
+		std::string out(tmp);
+#else		
         //use a glibc-specific implementation, which does not have the memory allocation
         //	problems of the standard version
-        char *tmp = realpath( fname.c_str() , 0 );
+		db_printf(30,"calling realpath() on '%s'\n", fname.c_str());
+        char *tmp = realpath( fname.c_str() , NULL );
         //note that *tmp is malloc'd by realpath.
         if(tmp == NULL)
-            return std::string();
+            return "";
+
 		//strip trailing backslash:
 		int reqLen = strlen(tmp);
-		if( tmp[reqLen-2] == os::sep )
+		if( (tmp[reqLen-2] == os::sep) && (reqLen > 2) )
 			tmp[reqLen-2] = 0;
 
+		db_printf(30,"normalize(): converting back to string\n");
 		std::string out( tmp );
 		free(tmp);	//it's malloced, don't use delete
-#endif
+#endif	
 		return out;
 	}
 

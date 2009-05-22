@@ -28,21 +28,21 @@
 #include <stdint.h>
 
 #ifdef USE_TAGLIB
-	#ifdef WIN32
+//	#ifdef WIN32
 		#include <fileref.h>
 		#include <tag.h>
 		#include <flacfile.h>
 		#include <mpegfile.h>
 		#include <id3v2tag.h>
 		#include <xiphcomment.h>
-	#else
+/*	#else
 		#include <taglib/fileref.h>
 		#include <taglib/tag.h>
 		#include <taglib/flacfile.h>
 		#include <taglib/mpegfile.h>
 		#include <taglib/id3v2tag.h>
 		#include <xiphcomment.h>
-	#endif
+	#endif*/
 #else
 	#include <assert.h>		// To check compilation of struct-alignment
 	#include <bitset>		// For mpeg header decoding
@@ -51,6 +51,8 @@
 #include "debug.h"
 #include "util.hpp"
 #include "fileInfo.hpp"
+
+using namespace std;
 
 
 /// Get mime type, based on the extension of a filename
@@ -92,7 +94,17 @@ std::string getMime(const char *extension)
 }
 
 
-#ifndef USE_TAGLIB
+#ifdef USE_TAGLIB
+
+//for some reason, TagLib::String::to8bit() crashed under win32...
+std::string tagLibStr(TagLib::String st)
+{
+	const char *str = st.toCString();
+	std::string out(str);
+	return out;
+}
+
+#else
 
 //as defined by http://www.id3.org/id3v2-00
 const char *id3v1Genres[] = {
@@ -485,7 +497,7 @@ namespace flac
 
 
 ///shamelessly copied from libtag:
-int readMpegHeader(FILE *f, fileInfo& info)
+int readMpegHeader(FILE *f, fileInfo* info)
 {
 	static const int bitrates[2][3][16] = {
 		{ // Version 1
@@ -586,8 +598,8 @@ int readMpegHeader(FILE *f, fileInfo& info)
 			float length = flen / (float)(hdr.bitrate * 125.f);
 
 
-			info.sampleRate = hdr.sampleRate;
-			info.length     = (length+.5f);
+			info->sampleRate = hdr.sampleRate;
+			info->length     = (int)(length+.5f);
 			hdrFound = true;
 			break;
 		}
@@ -599,13 +611,6 @@ int readMpegHeader(FILE *f, fileInfo& info)
 
 
 
-//for some reason, TagLib::String::to8bit() crashed under win32...
-std::string tagLibStr(TagLib::String st)
-{
-	const char *str = st.toCString();
-	std::string out(str);
-	return out;
-}
 
 
 
@@ -714,13 +719,14 @@ fileInfo::fileInfo(const char *fname)
 		//alternate source for replay-gain info
 		if( xiph != NULL)
 		{
-			if( xiph->contains("REPLAYGAIN_TRACK_GAIN") )
+			if( xiph->fieldListMap().contains("REPLAYGAIN_TRACK_GAIN") )	//make it work under taglib 1.4
+			//if( xiph->contains("REPLAYGAIN_TRACK_GAIN") )
 			{
 				const char* strTrack = xiph->fieldListMap()["REPLAYGAIN_TRACK_GAIN"][0].toCString();
 				sscanf( strTrack, "%f %*s", &gainTrack );
 			}
-
-			if( xiph->contains("REPLAYGAIN_ALBUM_GAIN") )
+			if( xiph->fieldListMap().contains("REPLAYGAIN_ALBUM_GAIN") )	//make it work under taglib 1.4
+			//if( xiph->contains("REPLAYGAIN_ALBUM_GAIN") )
 			{
 				const char* str = xiph->fieldListMap()["REPLAYGAIN_ALBUM_GAIN"][0].toCString();
 				sscanf( str, "%f %*s", &gainAlbum );
@@ -737,34 +743,34 @@ fileInfo::fileInfo(const char *fname)
 	if(f == NULL)
 		return;
 
-	if( info.mime == "audio/mpeg" )
+	if( mime == "audio/mpeg" )
 	{
-		info.nrBits = '?';	//slim default
-		info.nrChannels = 2;
-		info.sampleRate = '?';
+		nrBits = '?';	//slim default
+		nrChannels = 2;
+		sampleRate = '?';
 
 		//this matches winamp's behaviour if ID3v2 only contains
 		//	replay-gain tags, but song info is in ID3v1:
-		int r1 = tagID3v1(f, info.tags);	//try ID3v1
-		int r2 = tagID3v2(f, info.tags);	//overwrite results with ID3v2, if exists.
+		int r1 = tagID3v1(f, tags);	//try ID3v1
+		int r2 = tagID3v2(f, tags);	//overwrite results with ID3v2, if exists.
 
 		fseek(f, util::max(0, r2 -1 ), SEEK_SET);
-		readMpegHeader(f, info);
+		readMpegHeader(f, this);
 
 		//try ID3v2 first, if that doesn't work, try ID3v1
 		//if(r != 0)	r = tagID3v1(f, info->tags);
 		//if(r == 0)	info->isAudioFile = true;
 		if( (r1>=0) || (r2>=0) )
-			info.isAudioFile = true;
+			isAudioFile = true;
 	}
-	else if( info.mime == "audio/flac" )
+	else if( mime == "audio/flac" )
 	{
-		int r2 = tagID3v2(f, info.tags);
+		int r2 = tagID3v2(f, tags);
 		if( r2 > 0 )
 			fseek( f, r2, SEEK_SET);	//id3 found, seek to start of other data
 		else
 			fseek( f, 0 , SEEK_SET);	//nothing found, seek back
-		flac::parseHeader(f, &info );
+		flac::parseHeader(f, this );
 	}
 
 	fclose(f);

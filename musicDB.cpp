@@ -18,6 +18,8 @@ using namespace std;
 
 //--------------------------- Local types --------------------------------------------------
 
+
+/// Read a zero-terminated string from a file
 void readCstring(char *dest, size_t len, FILE *file)
 {
 	char c;
@@ -56,7 +58,7 @@ dbEntry::dbEntry(FILE *f)
 	uint16_t len;
 
 	size_t n = fread( &len, sizeof(uint16_t), 1, f);
-	if( n== 1)
+	if( n == 1)
 	{
 		char *tmp = new char[len];
 		readCstring( tmp, len, f);	relPath = tmp;
@@ -71,7 +73,7 @@ dbEntry::dbEntry(FILE *f)
 }
 
 
-/// store entry to a file database
+// store entry to a file database
 int dbEntry::pickle(FILE *f)
 {
 	uint16_t len = (uint16_t)(relPath.length() + fileName.length() +
@@ -135,8 +137,8 @@ void listdirRecursive( const std::string& basePath,
 				dbEntry entry(relPath, string(pEntry->d_name), &fInfo );
 				lstFound.push_back( entry );
 				//db_printf(50,"%-30s: %s - %s, year %s\n", fInfo.url.c_str(), fInfo.tags["artist"].c_str(), fInfo.tags["title"].c_str(), fInfo.tags["year"].c_str() );
-			} 
-			else 
+			}
+			else
 			{
 				db_printf(5,"%-30s: invalid\n", pEntry->d_name);
 			}
@@ -204,6 +206,8 @@ void musicDB::scan(const char *dbName)
 
 	std::list<dbEntry> entries;
 	std::string relpath = "";	//need a reference, so can't pass a "" to listdirRecursive()
+
+	db_printf(3,"List recursive: '%s','%s'\n", basePath.c_str(), relpath.c_str() );
 	listdirRecursive( basePath, relpath, entries );
 
 	// Generate data file
@@ -249,7 +253,7 @@ int musicDB::load(const char *dbName, const char *idxName)
 
 	// Load the sorted indices:
 	FILE *f_idx= fopen(idxName, "rb");	//file with sorted indices into data
-	uint32_t nrItems32 = NULL;
+	uint32_t nrItems32 = 0;
 
 	//	first store header: number of entries, and an index into fdb:
 	if( f_idx == NULL)
