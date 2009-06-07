@@ -44,11 +44,16 @@ void testDB(void)
 	string dbIdx  = config.getset("musicDB", "dbIdx", "SqueezeD.idx");
 	config.write(configFile);
 
+	//Create a new DB:
 	musicDB db( dbPath.c_str() );
 	db.scan( dbFile.c_str() );
 	printf("scanning: found %llu items\n", (LLU)(db.size()) );
-
 	db.index( dbIdx.c_str() );
+
+	//Close and re-open it:
+	
+	int loadResult = db.load(dbFile.c_str() , dbIdx.c_str() );
+
 
 	//make a test query:
 	char match[] = "t";

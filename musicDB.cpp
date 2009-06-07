@@ -20,7 +20,10 @@ using namespace std;
 
 
 /// Read a zero-terminated string from a file
-void readCstring(char *dest, size_t len, FILE *file)
+void readCstring(char *dest,	///< O: destination buffer
+				 size_t len,	///< I: max. length to read
+				 FILE *file		///< I: file to read from
+				 )
 {
 	char c;
 	size_t i = 0;
@@ -36,6 +39,14 @@ void readCstring(char *dest, size_t len, FILE *file)
 }
 
 
+/// Write std::string to a file as zero-terminated string, return length written
+size_t writeCstring(const std::string& str, FILE *file)
+{
+	size_t len = strlen( str.c_str() );	//stop writing after first zero.
+	size_t n = fwrite( str.c_str(),  len+1,  1, file);	//write data + terminating zero;
+	return n*len;
+}
+
 
 dbEntry::dbEntry(std::string relPath, ///< path, relative to basepath of the databse
 				 std::string fname,	///< filename only, without any paths
@@ -44,6 +55,11 @@ dbEntry::dbEntry(std::string relPath, ///< path, relative to basepath of the dat
 	this->relPath  = relPath;
 	this->fileName = fname;		//filename only, without any paths
 
+	/*title = fInfo->getTag(string("title"));
+	artist= fInfo->getTag(string("artist"));
+	album = fInfo->getTag(string("album"));
+	year  = fInfo->getTag(string("year"));
+	genre = fInfo->getTag(string("genre"));*/
 	title = fInfo->tags["title"];
 	artist= fInfo->tags["artist"];
 	album = fInfo->tags["album"];
@@ -76,19 +92,32 @@ dbEntry::dbEntry(FILE *f)
 // store entry to a file database
 int dbEntry::pickle(FILE *f)
 {
-	uint16_t len = (uint16_t)(relPath.length() + fileName.length() +
+	/*uint16_t len = (uint16_t)(relPath.length() + fileName.length() +
 					title.length() + album.length() + artist.length() +
 					year.length() + genre.length());
-	len += 7;	//include zero-terminations
+	len += 7;	//include zero-terminations*/
+
+	// make sure the strings contain no zeros themselves:
+	uint16_t lens[] = 
+		{	strlen(relPath.c_str())+1,
+			strlen(fileName.c_str())+1,
+			strlen(title.c_str())+1,
+			strlen(artist.c_str())+1,
+			strlen(album.c_str())+1,
+			strlen(year.c_str())+1,
+			strlen(genre.c_str())+1,
+		};
+
+	uint16_t len = lens[0] + lens[1] + lens[2] + lens[3] + lens[4] + lens[5] + lens[6];
 
 	fwrite( &len, sizeof(uint16_t), 1, f);
-	fwrite( relPath.c_str(),  relPath.length()+1,  1, f);
-	fwrite( fileName.c_str(), fileName.length()+1, 1, f);
-	fwrite( title.c_str(),    title.length()+1,    1, f);
-	fwrite( artist.c_str(),   artist.length()+1,   1, f);
-	fwrite( album.c_str(),    album.length()+1,    1, f);
-	fwrite( year.c_str(),     year.length()+1,     1, f);
-	fwrite( genre.c_str(),    genre.length()+1,    1, f);
+	fwrite( relPath.c_str(),  lens[0], 1, f);
+	fwrite( fileName.c_str(), lens[1], 1, f);
+	fwrite( title.c_str(),    lens[2], 1, f);
+	fwrite( artist.c_str(),   lens[3], 1, f);
+	fwrite( album.c_str(),    lens[4], 1, f);
+	fwrite( year.c_str(),     lens[5], 1, f);
+	fwrite( genre.c_str(),    lens[6], 1, f);
 
 	return 2 + len;	// length + data
 }
@@ -236,12 +265,17 @@ int musicDB::load(const char *dbName, const char *idxName)
 {
 	vector<uint32_t> dynOffset;		//offset into f_db, per entry
 
+	//Close db, if it's open:
+	if( f_db != NULL)
+		fclose(f_db);
+
 	f_db = fopen(dbName, "rb");
 	while( !feof(f_db) )
 	{
 		dynOffset.push_back( ftell(f_db) );	//keep track of file offsets
 		dbEntry e(f_db);
 	}
+	dynOffset.pop_back();	//last item is at EOF, remove it.
 
 	// Make the db ready for usage
 	this->nrEntries = dynOffset.size();

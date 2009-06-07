@@ -13,8 +13,15 @@
 #include <memory>
 
 
+
+
 struct fileInfo
 {
+private:
+	const static std::string strEmpty;
+public:
+
+
 	std::string url;
 	std::string mime;	// mime-type
 	bool isAudioFile;	// Whether it is a valid file
@@ -38,6 +45,16 @@ struct fileInfo
 
 	/// Initialize from a file:
 	fileInfo(const char *fname);
+
+	/// Wrapper to fix std::map's unexpected behaviour for non-existing keys:
+	/*const std::string& getTag(std::string& key) const
+	{
+		std::map< std::string, std::string>::const_iterator v = tags.find(key);
+		if( v == tags.end() )
+			return strEmpty;
+		else
+			return v->second;
+	}*/
 };
 
 

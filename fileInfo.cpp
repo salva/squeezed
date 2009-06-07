@@ -54,6 +54,8 @@
 
 using namespace std;
 
+const std::string fileInfo::strEmpty; // = "";
+
 
 /// Get mime type, based on the extension of a filename
 std::string getMime(const char *extension)
@@ -684,12 +686,16 @@ fileInfo::fileInfo(const char *fname)
 		TagLib::Tag *tag = pf->tag();
 		if( tag != NULL)
 		{
+			std::ostringstream yearS,trackS;
+			yearS << tag->year();
+			trackS<< tag->track();
+
 			tags["artist"] = tagLibStr( tag->artist() );
 			tags["album"]  = tagLibStr( tag->album()  );
 			tags["title"]  = tagLibStr( tag->title()  );
 			tags["genre"]  = tagLibStr( tag->genre()  );
-			tags["year"]   = tag->year();
-			tags["track"]  = tag->track();
+			tags["year"]   = yearS.str();
+			tags["track"]  = trackS.str();
 		}
 
 		// Get replay-gain info

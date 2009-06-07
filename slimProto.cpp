@@ -606,11 +606,13 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 			state->power = !state->power;
 			if( state->power ) {
 				setBrightness(state->brightness - 1);	//turn backlight on
-				setAudio(true,true);	//turn on D/A converters
+				setAudio(true,true);					//turn on D/A converters
+				setVisualization( state->currentViso );	//restore visualization
 			} else {
-				setBrightness( -1 );	//turn display off
 				stop();					//stop playback
-				setAudio(false,false);	//turn of D/A converters
+				setBrightness( -1 );	//turn display off
+				setAudio(false,false);	//turn off D/A converters
+				setVisualization( 0 );	//disable visualization
 			}
 		}
 
