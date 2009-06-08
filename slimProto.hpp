@@ -334,7 +334,7 @@ private:
 		Stream( )
 		{
 			command = 'S';
-			autostart = '0';
+			autostart = '1';
 			format = 'm';
 			pcmSampleSize = '?';
 			pcmSampleRate = '?';
@@ -413,7 +413,7 @@ protected:
     /// Low-level streaming command.
 	/// See squeezeCenter\Slim\Player\SqueezeBox.pm, sub stream_s
 	/// look for "my $frame = pack"
-    void STRM(void);
+    void STRM(uint32_t skipMs = 200);
 
 
 public:

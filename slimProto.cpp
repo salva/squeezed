@@ -522,7 +522,7 @@ void slimConnectionHandler::helo(netBuffer& buf, size_t len)
 
 	//init: stop all previous streams
 	stream.command   = 'q';
-	stream.autostart = '1';
+	//stream.autostart = '1';
 	STRM();
 
 	/*
@@ -850,7 +850,7 @@ void slimConnectionHandler::setVolume(uint8_t newVol)
 // Low-level streaming command.
 // See squeezeCenter\Slim\Player\SqueezeBox.pm, sub stream_s{} and sub stream{}
 // look for "my $frame = pack"
-void slimConnectionHandler::STRM()
+void slimConnectionHandler::STRM(uint32_t skipMs)
 {
 	char cmd[100];
 
@@ -876,9 +876,11 @@ void slimConnectionHandler::STRM()
 
 		//when pausing, this is interpreted as 'unpauseAt'
 		//	for command 'a' and 'p' it's ms, for 'u' it's seconds ???
-		//	't' is a timestamp, but what does it do?
+		//	't' is a timestamp, for network delay measurements, see 'STMt' status message.
 		if( stream.command == 's')
 			buf.write( stream.replayGain );
+		else if( stream.command == 'a')	//skip over a number of milliseconds
+			buf.write( skipMs );
 		else
 			buf.write( (uint32_t)0 );
 
@@ -940,10 +942,13 @@ void slimConnectionHandler::play()
 		if( data.album == ipc->getList(state->uuid)->get(currentItem+1).album )
 			sameAlbum = true;
 
-	if( sameAlbum )
+	if( sameAlbum ) {
 		stream.replayGain = dBToFixed( data.gainAlbum );
-	else
+		db_printf(2,"Setting replayGain to Album: %.3f dB\n", data.gainAlbum );
+	} else {
 		stream.replayGain = dBToFixed( data.gainTrack );
+		db_printf(2,"Setting replayGain to Track: %.3f dB\n", data.gainTrack );
+	}
 
 
 	stream.command    = 's';	//start the stream

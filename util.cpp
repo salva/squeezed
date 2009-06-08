@@ -159,9 +159,12 @@ namespace path
 
 		GetFullPathNameA( fname.c_str(), reqLen, tmp, NULL);			//do the work
 
-		//strip trailing backslash:
+		//strip trailing backslash, unless it's at the root of a drive letter:
 		if( tmp[reqLen-2] == os::sep )
 			tmp[reqLen-2] = 0;
+		if( reqLen > 3 )
+			if( tmp[reqLen-3] == ':')
+				tmp[reqLen-2] = os::sep;
 		//convert to lower case
 		//for(size_t i=0; i< reqLen-1; i++)	tmp[i] = tolower(tmp);
 

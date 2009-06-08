@@ -214,7 +214,7 @@ nbuffer::buffer* shoutConnectionHandler::handleGet(const char* request)
 			break;
 	}
 
-	db_printf(1,"SHOUT: handleGet(%llu), root dir %zu\n", (LLU)strlen(request), dynIdx );
+	db_printf(1,"SHOUT: handleGet(%llu), root dir %llu\n", (LLU)strlen(request), (LLU)dynIdx );
 	switch(dynIdx)
 	{
 		case ROOT:		// virtual root directory

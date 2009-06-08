@@ -64,6 +64,10 @@ public:
 	{
 	}
 
+	size_t bufsRemaining(void)
+	{
+		return writeBufs.size();
+	}
 
 	size_t bytesRemaining(void)
 	{

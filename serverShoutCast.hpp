@@ -83,7 +83,7 @@ class shoutConnectionHandler: public connectionHandler
 private:
 	slimIPC *ipc;	//inter-proces-data, gives acces to clients and the music database
 
-	char bufferIn[1<<10];	//input buffer. Should be large enough to handle a single GET-request
+	char bufferIn[1<<11];	//input buffer. Should be large enough to handle a single GET-request
 	size_t bufferInPos;
 	char sendBuffer[1<<16];	//output buffer.
 
@@ -135,7 +135,7 @@ public:
 		//add data to the input buffer:
 		size_t maxCopy = util::min( sizeof(bufferIn) - bufferInPos, len);
 		if (maxCopy < len)
-			db_printf(0,"WARNING: dropping data\n");	//not so nice to do this
+			db_printf(0,"WARNING: dropping data (%llu > %llu)\n", (LLU)len, (LLU)maxCopy);	//not so nice to do this
 
 		memcpy(bufferIn + bufferInPos, data, maxCopy);
 		bufferInPos += maxCopy;
@@ -151,6 +151,8 @@ public:
 				response = handleGet(bufferIn);
 			if( response != NULL)
 				write( response );		// write will delete response;
+			else 
+				keepConnection = false;	//nothing left to do here
 			closeAfterLastWrite = true;	// done after write, close the connection
 			bufferInPos = 0;
 		}

@@ -5,6 +5,11 @@
  *
  * fileInfo determines which files types are supported
  *
+ * TODO: have the music db update automatically
+ * when files are added, using FAM or inotify:
+ * http://www.ibm.com/developerworks/linux/library/l-ubuntu-inotify/index.html
+ * http://mail.gnome.org/archives/dashboard-hackers/2004-October/msg00022.html
+ *
  *@{
  */
 
@@ -150,6 +155,19 @@ private:
 		bool operator() (uint32_t idxA, uint32_t idxB);
 	};
 
+
+	/// Scan the file system for audio files, and read the tags
+	///		Build the list of files (*f_db and *offset)
+	void scan(const char *dbName = "SqueezeD.db");
+
+	/// Create sorted indices for the datasets, store the to disk
+	void index(const char *idxName);
+
+	/// Load an existing database from file
+	/// returns: -1: could not load index, -2: could not load databases
+	///			>=0: number of entries in database
+	int load(const char *dbName, const char *idxName);
+
 public:
 	musicDB(const char *path):
 		basePath(path),
@@ -169,14 +187,8 @@ public:
 		//delete offset;
 	}
 
-	/// Build the list of files (*f_db and *offset)
-	void scan(const char *dbName = "SqueezeD.db");
-
-	/// Create sorted indices for the datasets, store the to disk
-	void index(const char *idxName);
-
-	/// Load an existing database from file
-	int load(const char *dbName, const char *idxName);
+	/// Open or create the database and index files:
+	int init(const char *dbName, const char *idxName);
 
 	size_t size(void) {return nrEntries; }
 

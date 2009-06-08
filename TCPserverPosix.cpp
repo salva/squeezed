@@ -68,10 +68,16 @@ struct connections_s
 {
 	SOCKET socket;
 	connectionHandler *handler;
-	bool needsWrite;	//when handler->writeBuf() returns >0, this stays true
+	//bool needsWrite;	//when handler->writeBuf() returns >0, this stays true
 
+	bool needsWrite(void)
+	{
+		return (handler->bufsRemaining() > 0);
+	}
+	
 	connections_s(SOCKET s, connectionHandler* h):
-		socket(s), handler(h), needsWrite(false)
+		socket(s), handler(h)
+	//, needsWrite(false)
 	{}
 };
 

@@ -57,10 +57,17 @@ struct connections_s
 {
 	SOCKET socket;
 	connectionHandler *handler;
-	bool needsWrite;	//when handler->writeBuf() returns >0, this stays true
+	//bool needsWrite;	//when handler->writeBuf() returns >0, this stays true
+
+	bool needsWrite(void)
+	{
+		return (handler->bufsRemaining() > 0);
+	}
+
 
 	connections_s(SOCKET s, connectionHandler* h):
-		socket(s), handler(h), needsWrite(false)
+		socket(s), handler(h)
+		//, needsWrite(false)
 	{}
 };
 
@@ -167,7 +174,7 @@ int TCPserver::runNonBlock()
 		for(size_t i=0; i<connections.size(); i++)
 		{
 			maxfd = util::max(maxfd, connections[i].socket );
-			if( connections[i].needsWrite )
+			if( connections[i].needsWrite() )
 				FD_SET(connections[i].socket, &writeset );
 		}
 
@@ -235,11 +242,11 @@ int TCPserver::runNonBlock()
 					if(sresult > 0) 
 						//accept the data:
 						keepOpen = it->handler->processRead(rxBuf, sresult);
-						it->needsWrite = true;
+						//it->needsWrite = true;
 
 					if ((sresult == 0) || (!keepOpen) )
 					{
-						db_printf(3,"Closing client socket %i. recv = %i, keepOpen = %i\n", it->socket, sresult, keepOpen);
+						db_printf(3,"Closing client socket %i on port %i. recv = %i, keepOpen = %i\n", it->socket, port, sresult, keepOpen);
 						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
 						FD_CLR(it->socket, &writeset);
 						closesocket( it->socket );
@@ -253,11 +260,10 @@ int TCPserver::runNonBlock()
 				if (FD_ISSET(it->socket, &writeset) )		//handle writes
 				{
 					sresult = it->handler->writeBuf();
-					if( sresult <= 0)
-						it->needsWrite = false;
+					//if( sresult <= 0)	it->needsWrite = false;
 					if( it->handler->canClose() )
 					{
-						db_printf(3,"Closing client socket %i, done sending\n", it->socket);
+						db_printf(3,"Closing client socket %i on port %i, done sending\n", it->socket, port);
 						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
 						FD_CLR(it->socket, &writeset);
 						closesocket( it->socket );

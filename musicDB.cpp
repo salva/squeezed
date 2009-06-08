@@ -228,7 +228,29 @@ bool musicDB::compareGenre::operator() (uint32_t entryNrA, uint32_t entryNrB)
 
 
 
-/// Scan the file system for audio files, and read the tags:
+
+int musicDB::init(const char *dbName, const char *idxName)
+{
+	// only scan if index is missing
+	int loadedEntries =  load(dbName, idxName);
+	if( loadedEntries <= -2)
+	{
+		db_printf(1,"Scanning '%s'\n", basePath.c_str() );
+		scan( dbName );
+	}
+
+	if( loadedEntries <= -1)
+	{
+		db_printf(1,"Sorting results\n");
+		index( idxName );
+	}
+
+	return nrEntries;
+}
+
+
+
+// Scan the file system for audio files, and read the tags
 void musicDB::scan(const char *dbName)
 {
 	vector<uint32_t> dynOffset;		//offset into f_db, per entry
@@ -240,7 +262,14 @@ void musicDB::scan(const char *dbName)
 	listdirRecursive( basePath, relpath, entries );
 
 	// Generate data file
-	f_db = fopen(dbName, "wb");	//file with all data
+	f_db = fopen(dbName, "wb");			//file with all data
+
+	//write header:
+	fwrite( "sqdb", 4, 1, f_db);
+	//store path, to verify the loading (including zero-terminator:
+	fwrite( basePath.c_str(), basePath.size()+1, 1, f_db);
+
+
 	for (list<dbEntry>::iterator it = entries.begin(); it != entries.end(); it++)
 	{
 		dynOffset.push_back( ftell(f_db) );
@@ -260,7 +289,12 @@ void musicDB::scan(const char *dbName)
 }
 
 
-//
+
+
+
+
+
+// Load a musicDB from disk, including the index file
 int musicDB::load(const char *dbName, const char *idxName)
 {
 	vector<uint32_t> dynOffset;		//offset into f_db, per entry
@@ -270,6 +304,21 @@ int musicDB::load(const char *dbName, const char *idxName)
 		fclose(f_db);
 
 	f_db = fopen(dbName, "rb");
+	if( f_db == NULL)
+		return -2;
+
+	//Check header:
+	char hdr[4];
+	fread( hdr, 4, 1, f_db);
+	if( memcmp( hdr, "sqdb", 4 )!=0)
+		return -2;
+
+	//Verify that db was generate using the same path:
+	char dbPath[200];
+	readCstring( dbPath, sizeof(dbPath), f_db);
+	if( strcmp( dbPath, basePath.c_str()) != 0)
+		return -2;
+
 	while( !feof(f_db) )
 	{
 		dynOffset.push_back( ftell(f_db) );	//keep track of file offsets
@@ -287,18 +336,17 @@ int musicDB::load(const char *dbName, const char *idxName)
 
 	// Load the sorted indices:
 	FILE *f_idx= fopen(idxName, "rb");	//file with sorted indices into data
-	uint32_t nrItems32 = 0;
-
 	//	first store header: number of entries, and an index into fdb:
 	if( f_idx == NULL)
 		return -1;
 
+	uint32_t nrItems32 = 0;
 	int n = fread( &nrItems32, sizeof(nrItems32), 1, f_idx);
 	if( nrItems32 != nrEntries)
 	{
 		printf("invalid index file, it has %llu instead of %llu entries\n", (LLU)nrItems32, (LLU)nrEntries);
 		fclose(f_idx);
-		return -2;
+		return -1;
 	}
 
 	//for now: verify this, instead of just loading it:
@@ -311,7 +359,7 @@ int musicDB::load(const char *dbName, const char *idxName)
 			fclose(f_idx);
 			printf("offset[%llu] is %i instead of %i\n", (LLU)i, off, offset[i]);
 			fclose(f_idx);
-			return -3;
+			return -1;
 		}
 	}
 

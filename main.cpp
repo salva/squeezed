@@ -46,13 +46,13 @@ void testDB(void)
 
 	//Create a new DB:
 	musicDB db( dbPath.c_str() );
-	db.scan( dbFile.c_str() );
-	printf("scanning: found %llu items\n", (LLU)(db.size()) );
-	db.index( dbIdx.c_str() );
+	//db.scan( dbFile.c_str() );
+	//printf("scanning: found %llu items\n", (LLU)(db.size()) );
+	//db.index( dbIdx.c_str() );
 
 	//Close and re-open it:
-	
-	int loadResult = db.load(dbFile.c_str() , dbIdx.c_str() );
+	//int loadResult = db.load(dbFile.c_str() , dbIdx.c_str() );
+	db.init( dbFile.c_str() , dbIdx.c_str() );
 
 
 	//make a test query:
@@ -81,9 +81,10 @@ void testShout(void)
 
 	// Initialize music databse:
 	musicDB db( dbPath.c_str() );
-	db.scan( dbFile.c_str() );
-	printf("scanning: found %llu items\n", (LLU)db.size() );
-	db.index( dbIdx.c_str() );
+	//db.scan( dbFile.c_str() );
+	//printf("scanning: found %llu items\n", (LLU)db.size() );
+	//db.index( dbIdx.c_str() );
+	db.init( dbFile.c_str(), dbIdx.c_str() );
 
 	// Initialize servers
 	slimIPC			ipc(&db, &config);
@@ -152,19 +153,9 @@ void startThreads()
 	db_printf(6,"opening musicDB '%s'\n", dbPath.c_str() );
 	musicDB db( dbPath.c_str() );
 
-	// only scan if index is missing
-	int loadResult = -1;
-	if( !path::isfile( dbFile ) ) {
-		db_printf(1,"Scanning '%s'\n", dbFile.c_str() );
-		db.scan(dbFile.c_str() );
-	} else
-		loadResult = db.load(dbFile.c_str() , dbIdx.c_str() );
+	//Load database, or scan if it's missing:
+	db.init( dbFile.c_str() , dbIdx.c_str() );
 
-	if( loadResult < 0 )
-	{
-		db_printf(1,"Sorting results\n");
-		db.index( dbIdx.c_str() );
-	}
 	db_printf(1,"found %llu files\n", (LLU)db.size() );
 
 	//Both shout- and slim-server need to share some info.
