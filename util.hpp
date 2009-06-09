@@ -28,6 +28,71 @@
 typedef unsigned long long LLU;
 
 
+/// Very basic shared_prt
+template <class T> 
+class shared_ptr
+{
+private:
+	T	*data;
+	int *refcount;
+
+	void release(void)
+	{
+		if(refcount != NULL)
+		{
+			(*refcount)--;
+			if( *refcount < 1)
+			{
+				delete data;
+				delete refcount;
+			}
+		}
+	}
+public:
+	shared_ptr(void)
+	{
+		refcount = NULL;
+		data = NULL;
+	}
+
+	/// init from pointer, take ownership
+	shared_ptr(T* ptr)
+	{
+		refcount = new int;
+		*refcount = 1;
+		data = ptr;
+	}
+
+	/// init from other shared pointer
+	shared_ptr( shared_ptr<T>& src)
+	{
+		data	 = src.data;
+		refcount = src.refcount;
+		(*refcount)++;
+	}
+
+	~shared_ptr()
+	{
+		release();
+	}
+
+	shared_ptr<T>& operator=(shared_ptr<T>& src)
+	{
+		//prevent copy to self
+		if (this == &src)
+			return *this;
+		//release own data:
+		release();
+		//acquire new:
+		data     = src.data;
+		refcount = src.refcount;
+		(*refcount)++;
+
+		return *this;
+	}
+};
+
+
 /// Really low-level things
 namespace util
 {
@@ -128,6 +193,10 @@ namespace nbuffer {
 		size_t _size;
 		size_t _pos;
 	public:
+		//allow derived classes to override the destructor, for cleanup
+		virtual ~buffer()
+		{ }
+
 		/// Indicate end-of-stream
 		char eof(void);
 		/// Number of bytes
@@ -135,10 +204,13 @@ namespace nbuffer {
 		/// current position
 		size_t pos(void);
 		size_t seek(int offset) { _pos += offset; return _pos; }
+		
 		/// returns pointer to start of data, if possible, otherwise returns NULL
 		virtual const char* ptr(void)	{return NULL; }
+		
 		/// read data into *dst, returns number of bytes read
 		virtual int read(void *dst, size_t len)=0;
+		
 		/// close all handles
 		virtual int close(void)=0;
 	};

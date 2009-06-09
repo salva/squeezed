@@ -50,6 +50,8 @@
 class connectionHandler
 {
 private:
+	bool isActive;	//TODO: make this a mutex
+
 	const static size_t maxPacketSize = (1<<15);	//write out the data in small blocks, to keep concurrent connections responsive
 	char localBuf[maxPacketSize];
 
@@ -62,6 +64,14 @@ public:
 			socketFD(socketFD),
 			closeAfterLastWrite(false)
 	{
+		isActive = true;
+	}
+
+	~connectionHandler()
+	{
+		isActive = false;
+		for(size_t i=0; i < writeBufs.size(); i++)
+			delete writeBufs[i];
 	}
 
 	size_t bufsRemaining(void)
@@ -89,6 +99,9 @@ public:
 	///	return result of send(). if 0, write is completed, <0 means an error
 	int writeBuf(void)
 	{
+		if(!isActive)
+			return -1;
+
 		//don't raise signals, since they're hard to use in multi-threaded apps:
 		int sendFlags = MSG_NOSIGNAL;
 
@@ -143,7 +156,8 @@ public:
 	// the *buf will be deleted by this class, once it is written to disk
 	void write( nbuffer::buffer *buf)
 	{
-		writeBufs.push_back( buf );
+		if(isActive)
+			writeBufs.push_back( buf );
 	}
 
 };

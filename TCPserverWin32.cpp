@@ -69,6 +69,10 @@ struct connections_s
 		socket(s), handler(h)
 		//, needsWrite(false)
 	{}
+
+	~connections_s()
+	{
+	}
 };
 
 	
@@ -153,8 +157,11 @@ int TCPserver::runNonBlock()
 	FD_ZERO(&readset);
 	FD_SET(ListenSocket, &readset);
 	size_t maxfd = ListenSocket;
+	// Time-out for the master-select()-call, If a write is to be initiated from another
+	// part of the software (e.g. web-gui starts playing through slim protocol),
+	// this value must be relatively small to keep the delay acceptable.
 	timeval tv;
-	tv.tv_sec =   4;	//time-out for the master-select()-call
+	tv.tv_sec =   1;	
 	tv.tv_usec =  0;
 
 
@@ -182,7 +189,7 @@ int TCPserver::runNonBlock()
 		sresult = select(maxfd + 1, &tempset, &writeset, NULL, &tv);
 
 		if( sresult == 0 ) {
-			db_printf(15,"select() timed out\n");
+			//db_printf(15,"select() timed out\n");
 		} else if( (sresult < 0)  && (errno != WSAEINTR) ) {
 			db_printf(1,"Error in select(): %s\n", strerror(errno));
 		} else if (sresult > 0)	{
@@ -219,12 +226,12 @@ int TCPserver::runNonBlock()
 					u_long iMode = 1;	//non-blocking
 					iResult = ioctlsocket(ClientSocket, FIONBIO, &iMode);
 
-					connectionHandler *handler = newHandler(ClientSocket);
-					connections.push_back( connections_s(ClientSocket,handler) );
+					//create a new connection handler for this:
+					connections.push_back( connections_s(ClientSocket, newHandler(ClientSocket)) );
 
 					db_printf(2,"connected to %s, port %s\n", host, serv );
 				} else {
-					//closesocket(ClientSocket);
+					closesocket(ClientSocket);
 					db_printf(2,"refused connection to %s, port %s\n", host, serv );
 				}
 			} // if FD_ISSET(ListenSocket)
@@ -250,6 +257,7 @@ int TCPserver::runNonBlock()
 						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
 						FD_CLR(it->socket, &writeset);
 						closesocket( it->socket );
+						delete it->handler;
 						connections.erase( connections.begin() + conn );	//this also deletes any outstanding write buffers
 						conn--;			//update for-loop status
 					}
@@ -267,6 +275,7 @@ int TCPserver::runNonBlock()
 						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
 						FD_CLR(it->socket, &writeset);
 						closesocket( it->socket );
+						delete it->handler;
 						connections.erase( connections.begin() + conn );
 						conn--;			//update for-loop status
 					}
