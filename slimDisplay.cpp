@@ -532,7 +532,7 @@ const float slimVolumeScreen::timeOut = 3.5;
 
 void slimVolumeScreen::draw(char transition, int8_t param)
 	{
-		float vol = *(connection->volume());
+		float vol = (float)connection->volume();
 		char msg[32];
 
 		if( difftime(time(NULL), startTime) > timeOut)
@@ -553,25 +553,23 @@ void slimVolumeScreen::draw(char transition, int8_t param)
 		display->draw(transition,param);
 	}
 
+
 bool slimVolumeScreen::command(commands_e cmd)
-	{
-		bool handled = true;
-		startTime = time(NULL);		//reset timeout counter
-		char *vol = connection->volume();
-		if( cmd == cmd_Vup ) {
-			*vol = util::clip(*vol + delta, 0, 100);
-			connection->setVolume(*vol);
-		} else if( cmd == cmd_Vdown ) {
-			*vol = util::clip(*vol - delta, 0, 100);
-			connection->setVolume( *vol );
-		} else {
-			display->slimConnection->setMenu( parent );
-			handled = false;
-			//handled = parent->command( cmd );
-		}
-		draw();
-		return handled;
+{
+	bool handled = true;
+	startTime = time(NULL);		//reset timeout counter
+	char vol = connection->volume();
+	if( cmd == cmd_Vup ) {
+		vol = util::clip( vol + delta, 0, 100);
+		connection->setVolume( vol );
+	} else if( cmd == cmd_Vdown ) {
+		vol = util::clip( vol - delta, 0, 100);
+		connection->setVolume( vol );
+	} else {
+		display->slimConnection->setMenu( parent );
+		handled = false;
+		//handled = parent->command( cmd );
 	}
-
-
-
+	draw();
+	return handled;
+}

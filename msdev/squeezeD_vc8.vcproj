@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="9,00"
+	Version="8.00"
 	Name="squeezed"
 	ProjectGUID="{0C2729DA-9AC1-49BC-A4FD-B7E46F34DD3A}"
 	RootNamespace="squeezeD"
 	Keyword="Win32Proj"
-	TargetFrameworkVersion="196613"
 	>
 	<Platforms>
 		<Platform
@@ -43,7 +42,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="..\win32;..\taglib\include;..\taglib\include\taglib"
-				PreprocessorDefinitions="_WIN32;WIN32;_DEBUG;_CONSOLE;NOMINMAX;USE_TAGLIB"
+				PreprocessorDefinitions="_WIN32;WIN32;_DEBUG;_CONSOLE;NOMINMAX"
 				MinimalRebuild="false"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
@@ -63,7 +62,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="Ws2_32.lib taglibd.lib"
+				AdditionalDependencies="Ws2_32.lib"
 				LinkIncremental="2"
 				AdditionalLibraryDirectories="..\taglib\bin"
 				IgnoreAllDefaultLibraries="false"
@@ -89,6 +88,9 @@
 			/>
 			<Tool
 				Name="VCAppVerifierTool"
+			/>
+			<Tool
+				Name="VCWebDeploymentTool"
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"
@@ -125,7 +127,7 @@
 				FavorSizeOrSpeed="2"
 				WholeProgramOptimization="true"
 				AdditionalIncludeDirectories="..\win32;..\..\taglib_svn\include"
-				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;NOMINMAX;USE_TAGLIB"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;NOMINMAX"
 				StringPooling="false"
 				RuntimeLibrary="2"
 				StructMemberAlignment="1"
@@ -146,7 +148,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="Ws2_32.lib taglib.lib"
+				AdditionalDependencies="Ws2_32.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="..\taglib\bin"
 				GenerateManifest="true"
@@ -174,6 +176,9 @@
 			/>
 			<Tool
 				Name="VCAppVerifierTool"
+			/>
+			<Tool
+				Name="VCWebDeploymentTool"
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"
@@ -271,11 +276,7 @@
 				>
 			</File>
 			<File
-				RelativePath="..\htmlTemplate.hpp"
-				>
-			</File>
-			<File
-				RelativePath="..\httpclient.hpp"
+				RelativePath="..\lastfm\httpclient.hpp"
 				>
 			</File>
 			<File
@@ -300,10 +301,6 @@
 			</File>
 			<File
 				RelativePath="..\slimProto.hpp"
-				>
-			</File>
-			<File
-				RelativePath="..\socket.hpp"
 				>
 			</File>
 			<File

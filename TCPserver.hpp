@@ -78,6 +78,24 @@ public:
 	{
 		return writeBufs.size();
 	}
+	
+	/// Return true if a call to writeBuf() will be blocking
+	bool isWriteBufBlocking(void)
+	{
+		bool isBlock = false;
+		if( writeBufs.size() > 0)
+		{
+			if( !writeBufs[0]->canRead() )
+				isBlock = true;
+		}
+		return isBlock;
+	}
+
+    // Return true if incoming data will not be accepted
+    virtual bool isReadBufBlocking(void)
+    {
+        return false;
+    }
 
 	size_t bytesRemaining(void)
 	{
@@ -108,8 +126,11 @@ public:
 		if( writeBufs.size() == 0)
 			return 0;
 		size_t pos   = writeBufs[0]->pos();
+		// tricky multi-threading. require data before size, since nbuffer can
+		// still change this internally
+		const char *data = writeBufs[0]->ptr();		
 		size_t maxBytes = writeBufs[0]->size() - pos;
-		const char *data = writeBufs[0]->ptr();
+
 		int nSend = 0;
 
 		if( data != NULL ) {
@@ -122,21 +143,22 @@ public:
 		} else {
 			//need to use temporary data:
 			maxBytes = util::min(maxBytes, maxPacketSize);
-			nSend = writeBufs[0]->read( localBuf, maxBytes);
-
-			nSend = send( socketFD, localBuf, maxBytes, sendFlags);
-			if( nSend != (int)maxBytes)
+			if( maxBytes > 0)
 			{
-				db_printf(1,"(F) sending %llu bytes to socket %i, ", (LLU)maxBytes, socketFD);
-				db_printf(1,"(F) sent %i\n", nSend);
-				db_printf(1,"(F) buf._pos = %llu\n", (LLU)writeBufs[0]->pos() );
+				nSend = writeBufs[0]->read( localBuf, maxBytes);
+				nSend = send( socketFD, localBuf, maxBytes, sendFlags);
+				if( nSend != (int)maxBytes)
+				{
+					db_printf(1,"(F) sending %llu bytes to socket %i, ", (LLU)maxBytes, socketFD);
+					db_printf(1,"(F) sent %i\n", nSend);
+					db_printf(1,"(F) buf._pos = %llu\n", (LLU)writeBufs[0]->pos() );
+				}
 			}
 		}
 
-		maxBytes = writeBufs[0]->size() - writeBufs[0]->pos();
-
+		//maxBytes = writeBufs[0]->size() - writeBufs[0]->pos();
 		//Stop sending if we're done, or if we couldn't send anything:
-		if( (nSend <= 0) || (maxBytes <= 0 ) )
+		if( ((maxBytes>0)&&(nSend <= 0)) || writeBufs[0]->eof() )
 		{
 			delete writeBufs[0];
 			writeBufs.erase( writeBufs.begin() );

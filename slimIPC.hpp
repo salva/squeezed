@@ -119,15 +119,15 @@ class playList
 {
 public:
 	vector<musicFile> items;
-	size_t	currentItem;		// current seletect item, req
-	uint32_t lastUpdate;		// time of last update
+	size_t		currentItem;		// current seletect item, req
+	uint32_t	lastUpdate;		// time of last update
 	bool		repeat;			//repeat list, after it's completed
 
 	//To handle transition to next song for multiple clients:
 	// first client to reach end-of-song, requests next.
 	// then request will pass a new play command to all clients.
 
-	//default constructor:
+	// Default constructor:
 	playList(): currentItem(0), lastUpdate(0), repeat(false)
 	{}
 
@@ -143,6 +143,13 @@ public:
 	musicFile get(size_t index) const;
 };
 
+
+
+
+//for mutexes, see:
+//http://opengroup.org/onlinepubs/007908775/xsh/pthread_mutex_lock.html
+#include <stdio.h>
+void printMutexError(int err);
 
 
 
@@ -178,6 +185,7 @@ private:
 
 	/// Device reading,
 	//	must be private for this class to be thread-safe
+	// Returns devices.end() if device is not found.
 	std::vector<dev_s>::iterator devByName( string clientName )
 	{
 		std::vector<dev_s>::iterator it = devices.begin();
@@ -193,6 +201,7 @@ private:
 		pthread_mutex_t group;	//all playlist changes
 		pthread_mutex_t client;	//all client changes
 		pthread_mutex_t others;	//for slimServer and shoutServer
+		pthread_mutex_t config;
 	} mutex;
 
 
@@ -223,25 +232,39 @@ public:
 	int getShoutPort(void);
 
 	/// Acces to the main configuration file
-	/// TODO: mutex this.
 	configValue getConfig(string section, string option, configValue defaultValue)
 	{
+		pthread_mutex_lock( &mutex.config );
+
 		//store a default for everything that's read:
 		if( !config->hasOption(section,option) )
 		{
 			config->set(section, option, defaultValue);
 			config->write();	//TODO: write this to disk, but not always
 		}
-		return config->get(section,option,defaultValue);
+		configValue ret = config->get(section,option,defaultValue);
+
+		pthread_mutex_unlock( &mutex.config );
+		return ret;
 	}
 
-	/// TODO: mutex this
+    vector<std::string> getConfigSections(void)
+    {
+		pthread_mutex_lock( &mutex.config );
+		vector<std::string> slist = config->listSections();
+		pthread_mutex_unlock( &mutex.config );
+		return slist;
+    }
+
 	void setConfig(string section, string option, configValue newValue)
 	{
-		//store a default for everything that's read:
-		config->set(section, option, newValue);
+		pthread_mutex_lock( &mutex.config );
+
+		config->set(section, option, newValue);		//store a default for everything that's read
 		//TODO: write this to disk, but not always
 		config->write();
+
+		pthread_mutex_unlock( &mutex.config );
 	}
 
 
@@ -250,8 +273,6 @@ public:
 
 	/// forget about it
 	int delDevice(string clientName);
-
-
 
 
 	/// Get a list of all connected devices
@@ -264,7 +285,12 @@ public:
 	}
 
 	/// Device control, for shoutProto
-	void cmdDevice(string devName, string cmd);	//'play','pause','stop'
+	/// Commands are:  play,pause,stop,prev,next,volume
+	void setDevice(const string& devName, const string& cmd, const string& cmdParam="");
+
+	/// Device info
+	/// fields are: volume,elapsed
+	std::string getDevice(const string& devName, const string& field);
 
 
 	/// Seek time into current song
@@ -287,14 +313,17 @@ public:
 
 	/// Get current playlist for a device:
 	/// TODO: make a copy, else it's not thread-safe.
-	const playList* getList(string clientName)
-	{
-		const playList *ret = NULL;
-		std::vector<dev_s>::iterator it = devByName( clientName );
-		if( it != devices.end() )
-			ret	= it->group;
-		return ret; //->items;
-	}
+	/// Note that the checksum is not very robust, since part of the
+	/// data that is checksummed consist of pointers (&std::string).
+	const playList* getList(string clientName, ///<I: name of the client to fetch the playlist
+							int *checksum=NULL ///<O: optional, checksum of all data
+							);
+
+
+	void setRepeat(string groupName,bool state);
+
+
+	bool getRepeat(string groupName);
 
 
 	/// Get current song
@@ -304,7 +333,28 @@ public:
 	int connect(string clientName, string groupName);
 	int disconnect(string clientName, string groupName);
 
+	/// Callback functions for updates: (web-gui)
+	class callbackFcn {
+	public:
+        // Should return false to unregister it.
+		virtual bool call(void)=0;
+	};
+
+	/// Register a callback function, to get an update once
+	/// the client status changes:
+	void registerCallback(callbackFcn *callback, string clientName);
+
+	/// Remove the callback again
+	void unregisterCallback(callbackFcn *callback);
+
+	/// Notify all sub-systems that the status of a device has changed:
+	void notifyClientUpdate(client* device);
+
+
+private:
+	vector<pair<string,callbackFcn*> > callbacks;
 };
+
 
 #endif
 

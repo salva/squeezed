@@ -6,6 +6,7 @@
 	#include <netdb.h>	//to lookup shout streams
 #endif
 
+#include "socket.hpp"
 
 #include "configParser.hpp"
 #include "serverShoutCast.hpp"
@@ -226,6 +227,20 @@ musicFile playList::get(size_t index) const
 
 //----------------- external interface -------------------------
 
+void printMutexError(int err)
+{
+	if(err==0)
+		return;
+
+	fprintf(stderr, "Mutex error %i: %s\n", err, strerror(err) );
+#ifdef WIN32
+	fprintf(stderr,"\tWin32 error-code: %i\n", GetLastError());
+#endif
+	assert(err==0);
+}
+
+
+
 slimIPC::slimIPC(musicDB *db, configParser	*config): db(db)
 {
 	this->config = config;
@@ -233,7 +248,25 @@ slimIPC::slimIPC(musicDB *db, configParser	*config): db(db)
 	this->slimServer  = NULL;
 	this->shoutServer = NULL;
 
-	pthread_mutex_init( &mutex.group, NULL);
+#ifdef WIN32
+	pthread_mutexattr_t *mattr = NULL;
+#else
+	pthread_mutexattr_t mattr_storage;
+	pthread_mutexattr_t *mattr = &mattr_storage;
+	pthread_mutexattr_init( mattr );
+	//Allow the same thread to access the mutex multiple time:
+	pthread_mutexattr_settype( mattr, PTHREAD_MUTEX_RECURSIVE);
+	//pthread_mutexattr_settype( &mattr, PTHREAD_MUTEX_ERRORCHECK);
+#endif
+	pthread_mutex_init( &mutex.group, mattr);
+	pthread_mutex_init( &mutex.others, mattr);
+	pthread_mutex_init( &mutex.client, mattr);
+	pthread_mutex_init( &mutex.client, mattr);
+	pthread_mutex_init( &mutex.config, mattr);
+
+#ifndef WIN32
+	pthread_mutexattr_destroy( mattr );
+#endif
 
 	//Load all playlists from disk
 	load( config->get("shout","port", 0)  );
@@ -270,6 +303,8 @@ slimIPC::slimIPC(musicDB *db, configParser	*config): db(db)
 slimIPC::~slimIPC(void)
 {
 	pthread_mutex_destroy( &mutex.group );
+	pthread_mutex_destroy( &mutex.others );
+	pthread_mutex_destroy( &mutex.client );
 }
 
 
@@ -339,9 +374,15 @@ int slimIPC::getShoutPort(void)
 // Device control, for slimProto
 int slimIPC::addDevice(string clientName, client* dev)	//add a device to the current list
 {
+	int e = pthread_mutex_lock( &mutex.client );
+	if( e!=0)	printMutexError(e);
+
 	//TODO: get group-name from a configuration file.
 	playList* group = &(this->group["all"]);
 	devices.push_back( dev_s(clientName, dev, group  ) );
+
+	e = pthread_mutex_unlock( &mutex.client );
+	if( e!=0)	printMutexError(e);
 	return devices.size();
 }
 
@@ -349,19 +390,94 @@ int slimIPC::addDevice(string clientName, client* dev)	//add a device to the cur
 // forget about it
 int slimIPC::delDevice(string clientName)
 {
+	int e = pthread_mutex_lock( &mutex.client );
+	if( e!=0)	printMutexError(e);
+
 	std::vector<dev_s>::iterator it = devByName( clientName );
 	if( it != devices.end() )
 	{
 		//store current setting:
 		string sectionName = "player." + clientName;
-		config->set( sectionName, "volume", *(it->device->volume()) );
+		config->set( sectionName, "volume", it->device->volume() );
 		config->set( sectionName, "group" , it->device->currentGroup() );
 		config->set( sectionName, "brightness" , *it->device->brightness() );
 		config->write( );
 
 		devices.erase( it );
 	}
+
+	e = pthread_mutex_unlock( &mutex.client );
+	if( e!=0)	printMutexError(e);
 	return devices.size();
+}
+
+
+
+void slimIPC::setDevice(const string& devName, const string& cmd, const string& cmdParam)
+{   //'play','pause','stop'
+	int e = pthread_mutex_lock( &mutex.client );
+	if( e!=0)	printMutexError(e);
+
+    std::vector<dev_s>::iterator dev = devByName(devName);
+    string groupName = this->getGroup(devName);
+
+    if( dev == devices.end() )
+        return;
+
+    if (cmd == "play" )			// TODO: This logic should be moved to whomever is calling this
+		if( dev->device->isPlaying() )
+			dev->device->pause();
+		else
+			dev->device->play();
+    else if(cmd == "pause")		// TODO: This logic should be moved to whomever is calling this
+		if( dev->device->isPlaying() )
+			dev->device->pause();
+		else
+			dev->device->unpause();
+    else if(cmd == "stop")
+        dev->device->stop();
+    else if(cmd == "volume")
+        dev->device->setVolume( atoi(cmdParam.c_str()) );
+    else if(cmd == "next")
+        seekList(groupName, +1, SEEK_CUR, true);
+    else if(cmd == "prev")
+        seekList(groupName, -1, SEEK_CUR, true);
+	else if(cmd == "repeat")
+		dev->group->repeat = !(dev->group->repeat);
+
+	e = pthread_mutex_unlock( &mutex.client );
+	if( e!=0)	printMutexError(e);
+}
+
+
+
+std::string slimIPC::getDevice(const string& devName, const string& field)
+{
+	char tmp[20];
+	std::vector<dev_s>::iterator dev = devByName(devName);
+    string groupName = this->getGroup(devName);
+
+	if( dev == devices.end() )
+        return string();
+
+	if( field == "volume" )
+		sprintf(tmp, "%i", dev->device->volume());
+	else if( field == "elapsed" )
+	{
+		int msec = dev->device->elapsed();
+		sprintf(tmp, "%i", msec / 1000);
+		//int sec = (msec/1000) % 60;
+		//int min = (msec/(1000*60));
+		//sprintf(tmp, "%i:%02i", min,sec);
+	}
+	else if( field == "playstate")
+	{
+		if( dev->device->isPlaying() )
+			sprintf(tmp,"play");
+		else
+			sprintf(tmp,"pause");
+	}
+	return tmp;	//this will create string with a copy of 'tmp'
 }
 
 
@@ -369,21 +485,33 @@ int slimIPC::delDevice(string clientName)
 // Get group name for a given client
 string slimIPC::getGroup(string clientName)
 {
+	playList *group = NULL;
 	string groupName;
 	size_t idx;
 	for( idx=0; idx < devices.size(); idx++)
 		if( devices[idx].name == clientName )
 			break;
 	if( idx < devices.size() )
-		groupName = devices[idx].name;
+		group = devices[idx].group;
+
+	// lookup group name:
+	map<string, playList>::iterator it;
+	for( it=this->group.begin(); it != this->group.end(); it++)
+	{
+		if( &(it->second) == group )
+			groupName = it->first;
+	}
 	return groupName;
 }
 
 
 
-// set a new playlist
+// Set a new playlist
 int slimIPC::setGroup(string groupName, vector<musicFile>& items)
 {
+	int e = pthread_mutex_lock( &mutex.group );
+	if( e!=0)	printMutexError(e);
+
 	if( group.find(groupName) == group.end() )
 		return -1;
 	playList *list = &group[groupName];
@@ -392,13 +520,20 @@ int slimIPC::setGroup(string groupName, vector<musicFile>& items)
 	list->currentItem = 0;
 
 	save();		//store status to disk
+
+	e = pthread_mutex_unlock( &mutex.group );
+	if( e!=0)	printMutexError(e);
 	return list->items.size();
 }
+
 
 
 // add items to a playlist, default to add at end
 int slimIPC::addToGroup(string groupName, vector<musicFile>& items, int offset)
 {
+	int e= pthread_mutex_lock( &mutex.group );
+	if( e!=0)	printMutexError(e);
+
 	if( group.find(groupName) == group.end() )
 		return -1;
 	playList *list = &group[groupName];
@@ -409,8 +544,68 @@ int slimIPC::addToGroup(string groupName, vector<musicFile>& items, int offset)
 	list->items.insert( it, items.begin(), items.end() );
 
 	save();		//store status to disk
+
+	e = pthread_mutex_unlock( &mutex.group );
+	if( e!=0)	printMutexError(e);
 	return list->items.size();
 }
+
+
+
+/// Get current playlist for a device:
+/// TODO: make a copy, else it's not thread-safe.
+const playList* slimIPC::getList(string clientName, int *checksum)
+{
+	const playList *ret = NULL;
+	std::vector<dev_s>::iterator it = devByName( clientName );
+	if( it != devices.end() )
+		ret	= it->group;
+
+	/// Return a checksum of the playlist, to quickly check for changes.
+	if( checksum != NULL )
+	{
+		if( ret == NULL )
+			*checksum = 0;
+		else
+		{
+			util::fletcher_state_t state = util::fletcher_init;
+			//this contains current index, repeat mode:
+			util::fletcher_update( (uint8_t*)ret, sizeof(*ret), &state );
+			for( size_t i=0; i < ret->items.size(); i++)
+			{
+					util::fletcher_update( (uint8_t*)&(ret->items[i]), sizeof( musicFile ), &state );
+			}
+			*checksum = util::fletcher_finish( state );
+		}
+	}
+	return ret; //->items;
+}
+
+
+
+void slimIPC::setRepeat(string groupName,bool state)
+{
+	playList *targetGroup = &group[groupName];
+
+	bool *v = &group[groupName].repeat;
+	if( *v != state )
+	{
+		*v = state;
+		for(size_t i=0; i< devices.size(); i++)
+		{
+			if( devices[i].group == targetGroup )
+				notifyClientUpdate( devices[i].device );
+		}
+	} // *v != state
+}
+
+
+
+bool slimIPC::getRepeat(string groupName)
+{
+	return group[groupName].repeat;
+}
+
 
 
 int slimIPC::seekList(string groupName, int offset, int origin, bool stopCurrent)
@@ -418,8 +613,12 @@ int slimIPC::seekList(string groupName, int offset, int origin, bool stopCurrent
 	//check if group is known:
 	if( group.find(groupName) == group.end() )
 		return -1;
+
+	int e = pthread_mutex_lock( &mutex.group );
+	if( e!=0)	printMutexError(e);
+
 	playList *list = &group[groupName];
-	size_t newIndex;
+	int newIndex;	//need to be able to handle negative numbers
 
 	switch(origin)
 	{
@@ -435,8 +634,8 @@ int slimIPC::seekList(string groupName, int offset, int origin, bool stopCurrent
 	default:
 		newIndex = list->currentItem;
 	}
-	bool isAtEnd = (newIndex >= list->items.size());
-	newIndex = util::clip<size_t>( newIndex, 0, list->items.size()-1);
+	bool isAtEnd = ((size_t)newIndex >= list->items.size());
+	newIndex = util::clip<int>( newIndex, 0, list->items.size()-1);
 
 	if( (list->repeat) && ( isAtEnd ))
 	{
@@ -461,6 +660,9 @@ int slimIPC::seekList(string groupName, int offset, int origin, bool stopCurrent
 					devices[i].device->play();
 			}
 	}
+
+	e = pthread_mutex_unlock( &mutex.group );
+	if( e!=0)	printMutexError(e);
 	return list->currentItem;
 }
 
@@ -471,6 +673,94 @@ musicFile slimIPC::getSong(string groupName)
 {
 	musicFile f;
 	if( group.find(groupName) != group.end() )
-		f = group[groupName].items[ group[groupName].currentItem ];
+    {
+        int size = group[groupName].items.size();
+        int idx  = group[groupName].currentItem;
+        if( size > idx )
+		    f = group[groupName].items[ idx ];
+    }
 	return f;
+}
+
+
+
+// Register a callback function, to get an update once
+// the client status changes:
+void slimIPC::registerCallback(callbackFcn *callback, string clientName)
+{
+	pthread_mutex_unlock( &mutex.others );
+
+	pair<string,callbackFcn*> cb(clientName,callback);
+	callbacks.push_back(cb);
+
+	pthread_mutex_unlock( &mutex.others );
+}
+
+
+// Remove the callback again
+void slimIPC::unregisterCallback(callbackFcn *callback)
+{
+	int e = pthread_mutex_lock( &mutex.others );
+	if( e!=0)	printMutexError(e);
+	//vector<pair<string,callbackFcn*>>::iterator it;
+	for( size_t i=0; i < callbacks.size(); i++)
+		//for(it = callbacks.begin(); it != callbacks.end(); it++)
+	{
+		if( callback == callbacks[i].second )
+		{
+			//Nasty, since callback-destructor can unregister itself (not anymore)
+			//pthread_mutex_lock( &mutex.others );
+			callbacks.erase( callbacks.begin() + i);
+			i--;	//update index w.r.t removal
+			//pthread_mutex_unlock( &mutex.others );
+
+		}
+	} //for it=callbacks
+	e = pthread_mutex_unlock( &mutex.others );
+	if( e!=0)	printMutexError(e);
+} // unregisterCallback
+
+
+
+void slimIPC::notifyClientUpdate(client* device)
+{
+	int e = pthread_mutex_lock( &mutex.others );
+	if( e!=0)	printMutexError(e);
+	int nrc = 0;
+	///Execute all callback functions:
+	//vector<pair<string,callbackFcn*>>::iterator it;
+	//for(it = callbacks.begin(); it != callbacks.end(); it++)
+
+	//Since the call to the client might actually remove it, the
+	// callbacks.size() call in the for-statement is really required.
+	for( size_t i=0; i < callbacks.size(); i++)
+	{
+		std::vector<dev_s>::iterator dev = devByName( callbacks[i].first );
+		if( dev != devices.end() )
+		{
+			//Call the callback, and remove it, if it's done:
+			if ( !callbacks[i].second->call() )
+			{
+				callbacks.erase( callbacks.begin() + i);
+				i--;	//update index w.r.t removal
+			}
+			nrc++;
+		}
+	}
+	e = pthread_mutex_unlock( &mutex.others );
+	if( e!=0)	printMutexError(e);
+
+	//Open/close both servers, to wake them up out of the select() wait.
+	// So this would be the main motivation to make the whole thing single-threaded.
+	// It is indeed a bit ugly.
+	if( nrc > 0 )	//only if callbacks have been executed
+	{
+		const char *home = "127.0.0.1";
+		Socket s;
+		s.setBlocking(false);
+		s.Connect(home, shoutServer->getPort() );
+		s.Close();
+		s.Connect(home, slimServer->getPort() );
+		s.Close();
+	}
 }

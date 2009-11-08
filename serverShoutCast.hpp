@@ -87,6 +87,10 @@ private:
 	size_t bufferInPos;
 	char sendBuffer[1<<16];	//output buffer.
 
+    // This is used to not accept any more data after input has been accepted.
+    // (necessary for /dynamic/notify connection handling)
+    bool isReadBlocking;
+
 	enum {
 		ST_STOP,
 		ST_START,
@@ -103,11 +107,15 @@ public:
 		streamData = NULL;
 		bufferInPos = 0;
 		streamStatus = ST_STOP;	//status of message sending
+        isReadBlocking = false;
 	}
 
+    virtual bool isReadBufBlocking(void)
+    {
+        return isReadBlocking;
+    }
 
-	//note that there's a non-blocking write function in the base class
-
+	/// Note that there's a non-blocking write function in the base class
 	bool processRead(const void *data, size_t len)
 	{
 		bool keepConnection = true;
@@ -179,7 +187,7 @@ public:
 	nbuffer::buffer *handleGet(const char* request);
 
 	/// Translate relative path to realpath. return dir-listing or file
-	class nbuffer::buffer *handleVFS(const char* request, const char *vfsBase, const char *realPath);
+	//class nbuffer::buffer *handleVFS(const char* request, const char *vfsBase, const char *realPath);
 };
 
 

@@ -1,0 +1,136 @@
+<html>
+<head>
+<title>SqueezeD player</title>
+
+<script src="squeezed.js" type="text/javascript" language="JavaScript"></script>
+
+<script type="text/javascript" language="JavaScript">
+	var device;
+	var jsonTemplate = "song.json"
+	var directUpdate = "/html/" + jsonTemplate;
+	var delayedUpdate = "/dynamic/notify?url=" + jsonTemplate;
+	
+	function initPlayer()
+	{
+		try {
+			device = getCookie("device");
+			//alert(device);
+			clb = new callback();
+			clb.open(directUpdate, updateView);
+		} catch (failed) {
+			alert(failed);
+			//alert("could not get " + url);
+		}
+	}
+	
+	function dVol(delta)
+	{
+		newVol = parseInt(parent.frames["header"].state.volume) + delta;
+		// Make the UI respond faster, by setting the volume before confirmation from the server:
+		parent.frames["header"].state.volume = newVol;
+		document.getElementById("volume").innerHTML = newVol;
+		control("volume", newVol);
+	}
+	
+
+	function updateView(state)
+	{
+		//alert("player.updateView: " + state);
+		try {
+			document.getElementById("title").innerHTML = state.title;
+			document.getElementById("album").innerHTML = state.album;
+			document.getElementById("artist").innerHTML = state.artist;
+
+			document.getElementById("pos").innerHTML = seconds2str(state.elapsed)  + " / " + seconds2str(state.length);
+			document.getElementById("volume").innerHTML = state.volume;
+		} catch(exc) { 
+			alert(exc)
+		}
+
+		//Request next update:
+		//clb = new callback();
+		//setTimeout( "clb.open(delayedUpdate, updateView)", 500 );
+	}
+//export symbols for google closure:
+//http://code.google.com/closure/compiler/docs/api-tutorial3.html
+window['updateView'] = updateView;
+window['dVol'] = dVol;
+</script>
+</head>
+
+
+<!-- Note: the double ## are to escape the squeezed-server keyword parser -->
+<style type="text/css">
+html {height:100%;}
+body {height:100%; margin:0; padding:0;}
+##bg {position:fixed; top:0; left:0; width:100%; height:100%;}
+##content {position:relative; z-index:1;}
+</style>
+<!--[if IE 6]>
+<style type="text/css">
+/* some css fixes for IE browsers */
+html {overflow-y:hidden;}
+body {overflow-y:auto;}
+##bg {position:absolute; z-index:-1;}
+##content {position:static;}
+</style>
+<![endif]-->
+
+
+<!-- <body onload="initPlayer();"> -->
+<body>
+
+<div id="bg"><img src="/html/icons/gradientCircle.png" width="100%" height="100%"></div>
+<div id="content">
+
+<table border="0" width="100%">
+<tr>
+	<td>
+		[TODO: Cover Image]
+	</td>
+	<td>
+		<table border="0" width="100%">
+		<tr><td>Title</td>  <td><a id="title"></a> </td></tr>
+		<tr><td>Album</td>  <td><a id="album"></a> </td></tr>
+		<tr><td>Artist</td> <td><a id="artist"></a> </td></tr>
+		</table>
+	</td>
+</tr>
+
+<tr>
+	<td>
+		Song Position: <a id="pos"></a>
+	</td>
+
+	<td>
+		<table border="0" width="100%">
+		<tr><td>Volume</td>
+		<td>
+			<a href="javascript:dVol(-10)"><img src="icons/subtract.png" border=0 alt=" - "></a>
+			<a id="volume"></a>
+			<a href="javascript:dVol(+10)"> <img src="icons/add.png" border=0 alt=" + "></a>
+		</td>
+		</tr>
+		</table>
+	</td>
+
+</tr>
+
+<tr>
+	<td>
+		<a href="javascript:control('prev')"><img src="/html/icons/prev.png" border=0 title="Previous Track"></a>
+		<a href="javascript:control('play')"><img src="/html/icons/play.png" border=0 title="Start Playback"></a>
+		<a href="javascript:control('pause')"><img src="/html/icons/pause.png" border=0 title="Pause Playback"></a>
+		<a href="javascript:control('stop')"><img src="/html/icons/stop.png" border=0 title="Stop playback"></a>
+		<a href="javascript:control('next')"><img src="/html/icons/next.png" border=0 title="Next Track"></a>
+	</td>
+	<td>
+		Random, Shuffle, 
+		<a href="javascript:control('repeat')">Repeat</a>
+	</td>
+</tr>
+</table> 
+
+</div>
+
+</body>

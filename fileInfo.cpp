@@ -74,6 +74,9 @@ std::string getMime(const char *extension)
 		{"svg" , "image/svg+xml"},
 		{"z"   , "application/x-compress"},
 		{"m3u" , "audio/x-playlist"},		//not really an official type..
+
+		{"js"  , "text/javascript"},
+		{"json", "text/plain"},
 	};
 
 	std::string mime;
@@ -742,7 +745,7 @@ fileInfo::fileInfo(const char *fname)
 		delete pf;
 	} //if mime == "audio"
 
-	db_printf(50,"%30s, %i seconds. track gain %.4f\n", fname, length, gainTrack );
+	db_printf(15,"%30s, %i seconds. track gain %.4f\n", fname, length, gainTrack );
 
 #else
 	FILE *f = fopen(fname, "rb" );

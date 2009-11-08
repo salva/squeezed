@@ -113,9 +113,16 @@ public:
 	}
 
 
-	/// Return list of options in a section. (not implemented yet)
-	vector<string> options(string section);
-
+	// Return list of options in a section. (not implemented yet)
+	//vector<string> options(string section);
+    vector<string> listSections(void)
+    {
+        vector<string> out( config.size() );
+        int i=0;
+        for(config_t::iterator it=config.begin(); it!=config.end(); it++)
+            out[i++] = it->first;
+        return out;
+    }
 
 	/// Return all items in a section
 	const section_t& items(string section)

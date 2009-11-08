@@ -1,0 +1,12 @@
+( {
+	"title" : "#TITLE#",
+	"album" : "#ALBUM#",
+	"artist" : "#ARTIST#",
+	"elapsed" : "#DEVICE.ELAPSED#",
+	"length" : "#LENGTH#",
+	"volume" : "#DEVICE.VOLUME#",
+	"listIndex" : "#playlist.index#",
+	"listSize"  : "#playlist.size#",
+	"listRepeat" : "#playlist.repeat#",
+	"listChecksum" : "#playlist.checksum#"
+} )

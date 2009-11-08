@@ -48,7 +48,7 @@ TCPserver::TCPserver(int port, int maxCon):
 		maxConnections(maxCon),
 		stop(false)
 {
-	db_printf(4,"TCPserver: port %i\n",port);
+	db_printf(2,"TCPserver: port %i\n",port);
 }
 
 
@@ -61,7 +61,8 @@ struct connections_s
 
 	bool needsWrite(void)
 	{
-		return (handler->bufsRemaining() > 0);
+		bool needsWrite = (handler->bufsRemaining() > 0) && (!handler->isWriteBufBlocking());
+		return needsWrite;
 	}
 
 
@@ -138,6 +139,19 @@ SOCKET setupListenSocket(int port)
 }
 
 
+/// Close a connection
+void closeHandler(std::vector<connections_s>& connections, size_t idx, fd_set *read, fd_set *write)
+{
+	connections_s *conn = &connections[idx];
+	FD_CLR(conn->socket, read);
+	FD_CLR(conn->socket, write);
+	closesocket( conn->socket );
+	delete conn->handler;
+	connections.erase( connections.begin() + idx );	//this also deletes any outstanding write buffers
+}
+
+
+
 /// handle multiple connections:
 int TCPserver::runNonBlock()
 {
@@ -152,18 +166,12 @@ int TCPserver::runNonBlock()
 	}
 
 	// Set up FD-sets for select-calls:
-	fd_set tempset, readset, writeset;
+	fd_set tempset, readset, writeset; // exceptset;
 
 	FD_ZERO(&readset);
 	FD_SET(ListenSocket, &readset);
 	size_t maxfd = ListenSocket;
-	// Time-out for the master-select()-call, If a write is to be initiated from another
-	// part of the software (e.g. web-gui starts playing through slim protocol),
-	// this value must be relatively small to keep the delay acceptable.
 	timeval tv;
-	tv.tv_sec =   1;	
-	tv.tv_usec =  0;
-
 
 	std::vector<connections_s> connections;	//TODO: use maxConnections to statically allocate
 
@@ -173,10 +181,10 @@ int TCPserver::runNonBlock()
 	while(!stop)
 	{
 		//(re-) initialize read sockets:
-		memcpy(&tempset, &readset, sizeof(tempset));
+		//memcpy(&tempset, &readset, sizeof(tempset));
 
 		maxfd = ListenSocket;		//if connections are closing, this needs to be rebuild
-		// Add all clients which have needsWrite set to the write set.
+		// Add all clients which have needsWrite() set to the write set.
 		FD_ZERO(&writeset);
 		for(size_t i=0; i<connections.size(); i++)
 		{
@@ -185,14 +193,82 @@ int TCPserver::runNonBlock()
 				FD_SET(connections[i].socket, &writeset );
 		}
 
-		// use a timeout, so this code is not stuck on the select()-call
+        //Re-build list of connections to read from, some might not be ready
+        //for input
+        FD_ZERO(&tempset);
+        //TODO: Don't listen for new connections if max. connections is reached:
+        FD_SET(ListenSocket, &tempset);
+		for(size_t i=0; i<connections.size(); i++)
+		{
+			//maxfd = util::max(maxfd, connections[i].socket );
+            if( !connections[i].handler->isReadBufBlocking() )
+				FD_SET(connections[i].socket, &tempset );
+		}
+/*
+		//Watch all sockets for errors:
+		FD_ZERO(&exceptset);
+		FD_SET(ListenSocket, &exceptset);
+		for(size_t i=0; i<connections.size(); i++)
+		{
+			maxfd = util::max(maxfd, connections[i].socket );
+			FD_SET(connections[i].socket, &exceptset );
+		}
+*/
+
+		// Time-out for the master-select()-call, If a write is to be initiated from another
+		// part of the software (e.g. web-gui starts playing through slim protocol).
+		// slimIPC->notifyClientUpdate() connects to both slimServer and shoutServer,
+		// to wake them both out of the select() call.
+		tv.tv_sec =   4;		//for debug, test responsiveness
+		tv.tv_usec =  0;
+
 		sresult = select(maxfd + 1, &tempset, &writeset, NULL, &tv);
 
 		if( sresult == 0 ) {
 			//db_printf(15,"select() timed out\n");
-		} else if( (sresult < 0)  && (errno != WSAEINTR) ) {
-			db_printf(1,"Error in select(): %s\n", strerror(errno));
-		} else if (sresult > 0)	{
+		} else if( (sresult < 0)  && (errno != WSAEINTR) ) 
+		{
+			db_printf(5,"Error in select(): %s\n", strerror(errno));
+			int err, errLen = sizeof(err);
+			//Try to find a way to detect which socket caused this:
+			for(size_t conn=0; conn < connections.size(); conn++ )
+			{
+				
+				int r = getsockopt( connections[conn].socket, SOL_SOCKET, SO_ERROR, (char *)&err, &errLen);
+				if( r < 0 )
+				{
+					closeHandler(connections, conn, &tempset, &writeset);
+					conn--;
+					continue;
+				}
+			}
+			//This happens quite often, since slimIPC opens/closes connections immediately.
+			// Eventually, the connections will be closed.
+			// "no such file or directory" does not seem to cause an error for getsockopt()
+			db_printf(5,"Error in select(), but couldn't find a socket with error: %s\n", strerror(errno));
+			db_printf(5,"\tError of connection %i = %i\n", connections.size()-1, err);
+
+		} 
+		else if (sresult > 0)	
+		{
+			/*
+			//Close all connections that give errors:
+			for(int conn=0; conn < (int)connections.size(); conn++)
+			{
+				connections_s *it = &connections[conn];
+				if (FD_ISSET(it->socket, &exceptset) )
+				{
+					FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
+					FD_CLR(it->socket, &writeset);
+					closesocket( it->socket );
+					delete it->handler;
+					connections.erase( connections.begin() + conn );	//this also deletes any outstanding write buffers
+					conn--;			//update for-loop status
+					continue;       //need to break, to prevent using non-existing connections in code below
+				}
+			}
+			*/
+
 			//Select has got something, check if it's the server:
 			if ( FD_ISSET(ListenSocket, &tempset) ) 
 			{
@@ -203,7 +279,8 @@ int TCPserver::runNonBlock()
 				SOCKET ClientSocket = accept(ListenSocket, (struct sockaddr*)&peername, &peerlen );
 				if (ClientSocket == INVALID_SOCKET) 
 				{
-					db_printf(1,"accept failed: %d\n", WSAGetLastError());
+					//Can happen if the client directly closes the connection again.
+					db_printf(5,"accept failed: %d\n", WSAGetLastError());
 					//closesocket(ListenSocket);
 					continue;
 				}
@@ -227,17 +304,18 @@ int TCPserver::runNonBlock()
 					iResult = ioctlsocket(ClientSocket, FIONBIO, &iMode);
 
 					//create a new connection handler for this:
-					connections.push_back( connections_s(ClientSocket, newHandler(ClientSocket)) );
+					connectionHandler *C = newHandler(ClientSocket);
+					connections.push_back( connections_s(ClientSocket, C) );
 
-					db_printf(2,"connected to %s, port %s\n", host, serv );
+					//db_printf(2,"connected to %s, port %s\n", host, serv );
+					db_printf(2,"Opening client socket %4i on port %i, to %s:%s\n", ClientSocket, port, host,serv );
 				} else {
 					closesocket(ClientSocket);
 					db_printf(2,"refused connection to %s, port %s\n", host, serv );
 				}
 			} // if FD_ISSET(ListenSocket)
 
-			//Now iterate over all clients:
-			//for(std::vector<connections_s>::iterator it = connections.begin();	it != connections.end();++it )
+			// Now iterate over all clients:
 			for(int conn=0; conn < (int)connections.size(); conn++)
 			{
 				connections_s *it = &connections[conn];
@@ -254,35 +332,36 @@ int TCPserver::runNonBlock()
 					if ((sresult == 0) || (!keepOpen) )
 					{
 						db_printf(3,"Closing client socket %i on port %i. recv = %i, keepOpen = %i\n", it->socket, port, sresult, keepOpen);
-						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
-						FD_CLR(it->socket, &writeset);
-						closesocket( it->socket );
-						delete it->handler;
-						connections.erase( connections.begin() + conn );	//this also deletes any outstanding write buffers
+						closeHandler(connections, conn, &tempset, &writeset);
 						conn--;			//update for-loop status
+						continue;       //need to break, to prevent using non-existing connections in code below
 					}
-					if ( sresult < 0) 
-						printf("Error in recv(): %s\n", strerror(errno));
+					else if ( sresult < 0)
+					{
+						db_printf(5,"Error in recv(): %s\n", strerror(errno));
+						closeHandler(connections, conn, &tempset, &writeset);
+						conn--;			//update for-loop status
+                        continue;       //need to break, to prevent using non-existing connections in code below
+					}
 				} 
-				
-				if (FD_ISSET(it->socket, &writeset) )		//handle writes
+
+                if (FD_ISSET(it->socket, &writeset) )		//handle writes
 				{
 					sresult = it->handler->writeBuf();
 					//if( sresult <= 0)	it->needsWrite = false;
 					if( it->handler->canClose() )
 					{
 						db_printf(3,"Closing client socket %i on port %i, done sending\n", it->socket, port);
-						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
-						FD_CLR(it->socket, &writeset);
-						closesocket( it->socket );
-						delete it->handler;
-						connections.erase( connections.begin() + conn );
+						closeHandler(connections, conn, &tempset, &writeset);
 						conn--;			//update for-loop status
+                        continue;       //need to break, to prevent using non-existing connections in code below
 					}
 				}
 			} //for j=0..all clients
 		} //select call succesfull
 	} //while !stop
+	
+	db_printf(1,"Closing server on port %i\n", port);
 
 	//close server connection
 	closesocket(ListenSocket);

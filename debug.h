@@ -6,8 +6,11 @@
 #include <stdio.h>
 
 //static int dbg=10;
-#define dbg 10
-
+#ifdef _DEBUG_
+	#define dbg 10
+#else
+	#define dbg 2	//less verbose on release builds
+#endif
 
 
 /*

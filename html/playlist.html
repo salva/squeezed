@@ -1,0 +1,61 @@
+<html>
+<head>
+<title>Current Playlist</title>
+
+<script type="text/javascript" language="JavaScript">
+	var req;
+	function call(action,idx)
+	{
+		try {
+			var url = "/dynamic/" + action + "?idx=" + idx;
+			req = window.XMLHttpRequest?new XMLHttpRequest():new ActiveXObject("Microsoft.XMLHTTP");
+			req.open("GET", url, true);
+			callOpen = true;
+			req.onreadystatechange=callCloser;
+			req.send(null);
+		} catch(ex) {
+			alert("playlist.call exception" + ex);
+		}
+	}
+	
+	function callCloser()
+	{
+		//Wait with page re-loading until request has been fully sent.
+		if( req.readyState > 2)
+		{
+			//parent.player.location.reload();
+			//parent.playlist.location.reload();
+		}
+	}
+	
+	
+	// Highlight the currently playing song:
+	function highlight()
+	{
+		idTitle = document.getElementById("tl#playlist.index#");
+		idAlbum = document.getElementById("al#playlist.index#");
+		idRow   = document.getElementById("di#playlist.index#");
+		try
+		{
+			//id.style.color = "blue";
+			//idTitle.style.backgroundColor = "##B0B0B0";	//use double ## to escape the squeezed-parser
+			//idAlbum.style.backgroundColor = "##B0B0B0";
+			idRow.style.backgroundColor = "##B0B0B0";
+			//id.style.fontWeight = 'bold';
+			//alert("id = " + id);
+		} catch( ex )
+		{
+			//alert("highlight()" + ex);
+		}
+	}
+</script>
+
+</head>
+<body onload="highlight()">
+
+<H2 id="title">Current Playlist: (checksum #PLAYLIST.CHECKSUM#)</H2>
+
+#PLAYLIST.LIST#
+
+</body>
+</html>

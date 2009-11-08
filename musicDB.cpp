@@ -98,7 +98,7 @@ int dbEntry::pickle(FILE *f)
 	len += 7;	//include zero-terminations*/
 
 	// make sure the strings contain no zeros themselves:
-	uint16_t lens[] = 
+	uint16_t lens[] =
 		{	strlen(relPath.c_str())+1,
 			strlen(fileName.c_str())+1,
 			strlen(title.c_str())+1,
@@ -142,7 +142,7 @@ void listdirRecursive( const std::string& basePath,
 	if (!pDir)
 		return;
 
-	db_printf(8,"listdirRecursive(): %s\n",sStartDir.c_str () );
+	db_printf(6,"listdirRecursive(): %s\n",sStartDir.c_str () );
 
 	dirent* pEntry;
 	while ( (pEntry = readdir(pDir)) )
@@ -309,8 +309,8 @@ int musicDB::load(const char *dbName, const char *idxName)
 
 	//Check header:
 	char hdr[4];
-	fread( hdr, 4, 1, f_db);
-	if( memcmp( hdr, "sqdb", 4 )!=0)
+	size_t n = fread( hdr, 4, 1, f_db);
+	if( (n<1) || (memcmp( hdr, "sqdb", 4 )!=0) )
 		return -2;
 
 	//Verify that db was generate using the same path:
@@ -341,8 +341,8 @@ int musicDB::load(const char *dbName, const char *idxName)
 		return -1;
 
 	uint32_t nrItems32 = 0;
-	int n = fread( &nrItems32, sizeof(nrItems32), 1, f_idx);
-	if( nrItems32 != nrEntries)
+	n = fread( &nrItems32, sizeof(nrItems32), 1, f_idx);
+	if( (n<1) || (nrItems32 != nrEntries) )
 	{
 		printf("invalid index file, it has %llu instead of %llu entries\n", (LLU)nrItems32, (LLU)nrEntries);
 		fclose(f_idx);
@@ -398,9 +398,9 @@ void musicDB::index(const char *idxName)
 		fseek(f_db, offset[ tidx[i] ], SEEK_SET);
 		dbEntry e(f_db);
 		if( e.title.length() < 1) {
-			db_printf(55,"%2u: empty tags: '%s'\n", tidx[i], e.fileName.c_str() );
+			db_printf(10,"%2u: empty tags: '%s'\n", tidx[i], e.fileName.c_str() );
 		} else {
-			db_printf(55,"%2u: %s\n", tidx[i], e.title.c_str() );
+			db_printf(10,"%2u: %s\n", tidx[i], e.title.c_str() );
 		}
 	}
 
@@ -584,7 +584,7 @@ dbQuery::dbQuery(musicDB *db, dbField field, const char *match):
 			}
 		}
 
-		db_printf(5,"found %lli items for key %s, match '%s'. %lli unique\n", (long long)(itEnd-itBegin), dbFieldStr[field], match, (long long)(uniqueIdx.size()) );
+		db_printf(3,"found %lli items for key %s, match '%s'. %lli unique\n", (long long)(itEnd-itBegin), dbFieldStr[field], match, (long long)(uniqueIdx.size()) );
 		if( ilen < 20 )
 		{
 			for(std::vector<uint32_t>::iterator it=itBegin; it != itEnd; it++)

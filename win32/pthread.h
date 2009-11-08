@@ -5,6 +5,9 @@
  *
  * It is not complete, but provides basic functionality
  *
+ * TODO:
+ * Since win32 does not have a non-recursive mutex, maybe copy
+ * the pthreads solution of using InterLockedExchange and events ??
  *
  * \ingroup win32
  *@{
@@ -25,6 +28,13 @@ extern "C" {
 
 typedef HANDLE pthread_t;
 typedef void pthread_attr_t;
+
+typedef enum { PTHREAD_MUTEX_DEFAULT, 
+				PTHREAD_MUTEX_NORMAL, 
+				PTHREAD_MUTEX_RECURSIVE, 
+				PTHREAD_MUTEX_ERRORCHECK, 
+				PTHREAD_MUTEX_OWNERTERM_NP 
+} mutex_mode_e;
 
 
 /** Create a thread
@@ -86,13 +96,10 @@ typedef SECURITY_ATTRIBUTES pthread_mutexattr_t;
 /** The pthread_mutex_init function initializes the given mutex with the given attributes. 
 	If attr is null, then the default attributes are used. 
 
-Returns
-
-The pthread_mutex_init function returns zero if the call is successful, otherwise it sets errno to EINVAL and returns -1.
-
-Implementation Notes
-
-The argument attr must be null. The default attributes are always used. 
+	Returns
+		The pthread_mutex_init function returns zero if the call is successful, otherwise it sets errno to EINVAL and returns -1.
+	Implementation Notes
+	The argument attr must be null. The default attributes are always used. 
 */
 int  pthread_mutex_init (pthread_mutex_t * mutex , pthread_mutexattr_t * attr );
 
@@ -120,6 +127,11 @@ The pthread_mutex_unlock function returns zero if the call is successful,
 otherwise it sets errno to EINVAL and returns -1. 
 */
 int  pthread_mutex_unlock (pthread_mutex_t * mutex );
+
+
+int pthread_mutexattr_init(pthread_mutexattr_t *attr);
+int pthread_mutexattr_destroy(pthread_mutexattr_t *attr); 
+int pthread_mutexattr_settype(pthread_mutexattr_t *attr, int kind);
 
 
 

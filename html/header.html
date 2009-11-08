@@ -1,0 +1,135 @@
+<html><head>
+
+<script src="squeezed.js" type="text/javascript" language="JavaScript"></script>
+
+<script type="text/javascript" language="JavaScript">
+	var jsonTemplate = "song.json"
+	var directUpdate = "/html/" + jsonTemplate;
+	var delayedUpdate = "/dynamic/notify?url=" + jsonTemplate;
+	var clb;
+	var state;
+	var ListCheckSum;
+	
+	function initHeader()
+	{
+		//alert("initHeader()")
+		clb = new callback();
+		clb.open(directUpdate, processUpdate);
+		ListCheckSum = -1;
+	}
+	
+	
+	function selectPlayer(name)
+	{
+		alert("selectPlayer("+name+")")
+		setCookie("device",name);
+		
+		response = wget( directUpdate );	//get blocking
+		state = eval(response);
+		updateViews();
+	}
+
+	
+	function updateViews(state)
+	{
+		try {
+			<!-- reload parent frames -->
+			try {
+				//This fails if the page is not yet loaded completely:
+				top.frames["player"].updateView(state);
+
+				//Only update current playlist if anything has changed:
+				if( state.listChecksum != ListCheckSum )
+				{
+					//alert("Reloading for checksum " + state.listChecksum );
+					ListCheckSum = state.listChecksum;
+					parent.playlist.location.reload();
+				}
+			} catch (exc) {
+				//parent.player.location.reload();
+			}
+			//alert("update Views");
+		} catch(ex) { 
+			alert("updateViews():\n" + ex); 
+		}
+	}
+	
+
+	function waitForUpdate()
+	{
+		try {
+			//alert("header.waitForUpdate");
+			tclb = new callback();
+			tclb.open(delayedUpdate, processUpdate);
+		} catch(e) { alert("waitForUpdate(): " + e) };
+	}
+	
+	function processUpdate(response, status)
+	{
+		//alert("process update. status = " + status);
+		try 
+		{
+			// If loaded and ok
+			if( (status == 200) && (response.length>0) ) 
+			{
+				state = eval(response);
+				updateViews(state);
+				
+				//parent.playlist.document.getElementById("title").innerHTML = "Playlist (" + idx + " /" + len + ")";
+				setTimeout("waitForUpdate()", 300);
+			} else {
+				// Not ok. wait a bit longer
+				setTimeout("waitForUpdate()", 2*1000);
+			}
+			
+		} catch(ex) {
+			alert("processUpdate() Exception:\n" + ex + "\nResponse was: " + response);
+			//try to resume after a little while:
+			window.setTimeout("waitForUpdate();", 5*1000);
+		}
+	}
+	
+</script>
+</head>
+
+<!-- Note: the double ## are to escape the squeezed-server keyword parser -->
+<style type="text/css">
+html {height:100%;}
+body {height:100%; margin:0; padding:0;}
+##bg {position:fixed; top:0; left:0; width:100%; height:100%;}
+##content {position:relative; z-index:1;}
+</style>
+<!--[if IE 6]>
+<style type="text/css">
+/* some css fixes for IE browsers */
+html {overflow-y:hidden;}
+body {overflow-y:auto;}
+##bg {position:absolute; z-index:-1;}
+##content {position:static;}
+</style>
+<![endif]-->
+
+
+
+<body onLoad="initHeader()">
+<div id="bg"><img src="/html/icons/gradient.png" width="100%" height="100%"></div>
+<div id="content">
+	<table border="0" width="100%">
+	<tr>
+		<td>SqueezeD Logo</td>
+		<td>Current Device:
+		
+		<select onchange="selectPlayer(this.value);">
+			#DEVICE.LIST#
+			<option value="test">Test Device</option>
+		</select>
+		
+		</td>
+	</tr>
+	</table>
+</div>
+
+
+</body>
+
+</html>

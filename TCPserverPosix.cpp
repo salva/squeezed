@@ -72,9 +72,10 @@ struct connections_s
 
 	bool needsWrite(void)
 	{
-		return (handler->bufsRemaining() > 0);
+		bool needsWrite = (handler->bufsRemaining() > 0) && (!handler->isWriteBufBlocking());
+		return needsWrite;
 	}
-	
+
 	connections_s(SOCKET s, connectionHandler* h):
 		socket(s), handler(h)
 	//, needsWrite(false)
@@ -162,18 +163,34 @@ int TCPserver::runNonBlock()
 		for(size_t i=0; i<connections.size(); i++)
 		{
 			maxfd = util::max(maxfd, connections[i].socket );
-			if( connections[i].needsWrite )
+			if( connections[i].needsWrite() )
 				FD_SET(connections[i].socket, &writeset );
 		}
 
-		// use a timeout, so this code is not stuck on the select()-call
-		tv.tv_sec =  4;
-		tv.tv_usec = 0;
+        //Re-build list of connections to read from, some might not be ready
+        //for input
+        FD_ZERO(&tempset);
+        //TODO: Don't listen for new connections if max. connections is reached:
+        FD_SET(ListenSocket, &tempset);
+		for(size_t i=0; i<connections.size(); i++)
+		{
+			//maxfd = util::max(maxfd, connections[i].socket );
+            if( !connections[i].handler->isReadBufBlocking() )
+				FD_SET(connections[i].socket, &tempset );
+		}
+
+
+		// Time-out for the master-select()-call, If a write is to be initiated from another
+		// part of the software (e.g. web-gui starts playing through slim protocol),
+		// this value must be relatively small to keep the delay acceptable.
+		tv.tv_sec =   2;
+		tv.tv_usec =  0;
+
 		sresult = select(maxfd + 1, &tempset, &writeset, NULL, &tv);
 
 		if (sresult == 0)
 		{
-			db_printf(3,"select() timed out\n");
+			db_printf(3,"select() timed out on port %i\n", port);
 		}
 		else if( (sresult < 0)  && (errno != EINTR) )
 		{
@@ -195,7 +212,7 @@ int TCPserver::runNonBlock()
 					continue;
 				}
 
-				db_printf(2,"accepting connection on serverport %i\n", port);
+				db_printf(2,"accepting socket %i on serverport %i\n", clientSocket, port);
 
 				//for debug, get client info
 				char host[INET6_ADDRSTRLEN];
@@ -212,16 +229,16 @@ int TCPserver::runNonBlock()
                     //set client to non-blocking mode: (if server is non-blocking, the clients will also be)
 					setBlocking( clientSocket, false );
 
-					connectionHandler *handler = newHandler(clientSocket);
-					connections.push_back( connections_s(clientSocket, handler) );
+					//create a new connection handler for this:
+					connectionHandler *C = newHandler(clientSocket);
+					connections.push_back( connections_s(clientSocket, C) );
 
-					//db_printf(1,"connected to %s\n", inet_ntoa(cli_addr.sin_addr) );
 					//db_printf(2,"connected to %s, port %s\n", host, serv );
 				}
 				else
 				{
-					db_printf(2,"refused connection to %s, port %i\n", host, 0 );
 					close(clientSocket);
+					db_printf(2,"refused connection to %s, serverport %i\n", host, port );
 				}
 
 			} // if FD_ISSET(ListenSocket)
@@ -238,34 +255,45 @@ int TCPserver::runNonBlock()
 					if(sresult > 0)
 						//accept the data:
 						keepOpen = it->handler->processRead(rxBuf, sresult);
-						it->needsWrite = true;
+						//it->needsWrite = true;
 
 					if ((sresult == 0) || (!keepOpen) )
 					{
-						db_printf(3,"Closing client socket %i. recv = %i, keepOpen = %i\n", it->socket, sresult, keepOpen);
+						db_printf(3,"Closing client socket %i. recv = %i, keepOpen = %i, serverPortL %i\n", it->socket, sresult, keepOpen, port);
 						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
 						FD_CLR(it->socket, &writeset);
-
 						close( it->socket );
-						connections.erase( connections.begin() + conn ); //this also deletes any outstanding write buffers
+						delete it->handler;
+						connections.erase( connections.begin() + conn );
 						conn--;			//update for-loop status
-					if( sresult < 0)
-						printf("Error in recv(): %s\n", strerror(errno));
+                        continue;          //need to break, to prevent using non-existing connections in code below
+					}
+					else 	if( sresult < 0)
+					{
+						printf("Error on port %i socket %i in recv(): %s\n", port, it->socket,  strerror(errno));
+						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
+						FD_CLR(it->socket, &writeset);
+						delete it->handler;
+						connections.erase( connections.begin() + conn );	//this also deletes any outstanding write buffers
+						conn--;			//update for-loop status
+                        continue;          //need to break, to prevent using non-existing connections in code below
 					}
 				}
 				if (FD_ISSET(it->socket, &writeset) )		//handle writes
 				{
 					sresult = it->handler->writeBuf();
-					if( sresult <= 0)
-						it->needsWrite = false;
+					//if( sresult <= 0)	it->needsWrite = false;
+
 					if( it->handler->canClose() )
 					{
-						db_printf(3,"Closing client socket %i, done sending\n", it->socket);
+						db_printf(3,"Closing client socket %i on port %i, done sending\n", it->socket, port);
 						FD_CLR(it->socket, &readset);	//maxFD is updated at the start of while(!stop)
 						FD_CLR(it->socket, &writeset);
 						close( it->socket );
+						delete it->handler;
 						connections.erase( connections.begin() + conn );
 						conn--;			//update for-loop status
+                        continue;          //need to break, to prevent using non-existing connections in code below
 					}
 				}
 			} //for j=0..all clients

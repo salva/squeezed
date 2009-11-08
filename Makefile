@@ -9,7 +9,7 @@ CONFIG=-DUSE_TAGLIB
 
 
 #SRCS=$(wildcard *.cpp) 
-SRCS=configParser.cpp fileInfo.cpp util.cpp\
+SRCS=configParser.cpp fileInfo.cpp util.cpp httpclient.cpp socket.cpp\
 	musicDB.cpp serverShoutCast.cpp slimProto.cpp slimIPC.cpp slimDisplay.cpp\
 	main.cpp \
 	TCPserverPosix.cpp \
@@ -49,16 +49,25 @@ endif
 #------------------ Cross-compilation from 64 to 32 bit
 #	this requires the following package under ubuntu
 # 	libc6-dev-i386 g++-multilib
+# also get getlibs to get the 32-bit taglib
+#   http://frozenfox.freehostia.com/cappy/
+# then install taglib using:
+#   getlibs --ldconfig -l taglib.so
+#   getlibs --ldconfig -p libtag1-vanilla
 ifeq ($(TARGET),32bit)
 	CXXFLAGS+=-m32 
 	#-I/usr/include/i486-linux-gnu/ 
-	LDFLAGS+=-m32 
+	LDFLAGS+=-m32 -L/usr/lib32
 	LIBS+=-lstdc++
 	HOST=linux-x86
 endif
 
-ifeq ($(HOST),Cygwin)
-	CXXFLAGS+=-D__CYGWIN__ 
+
+#--- just as linux-to-win32 compiling, this doesn't work
+#--- because of a missing d_type in dirent.h
+ifeq ($(findstring CYGWIN,$(HOST)),CYGWIN)
+	CXXFLAGS+=-D__CYGWIN__ -Itaglib/include
+	LDFLAGS+=-Ltaglib/bin
 	#--enable-pthreads
 endif
 
@@ -81,8 +90,8 @@ $(OBJDIR)/%.o : %.cpp $(HDRS)
 	
 
 #------------------ Make targets ---------------------------------------------
-all: squeezed 
-#openWRTtests
+all: squeezed
+# openWRTtests
 
 
 paths:
@@ -107,6 +116,10 @@ openWRTtests: $(OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -luClibc++ main_hello.cpp -o $(BINDIR)/$(BIN_OUT)_hello 
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -luClibc++ -lz main_zlib.cpp -o $(BINDIR)/$(BIN_OUT)_zlib
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -luClibc++ -lz -ltag main_tag.cpp -o $(BINDIR)/$(BIN_OUT)_tag
+
+	#To check which dlls are imported, use:
+	#objdump -p build_dir/target-mipsel_uClibc-0.9.30.1/squeezed-0.1/bin/openWRT/squeezed_zlib | grep NEEDED
+
 
 
 lzf: paths

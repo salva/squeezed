@@ -3,6 +3,7 @@
 */
 
 #ifdef WIN32
+#include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
@@ -105,7 +106,7 @@ TCPserverSlim::TCPserverSlim(slimIPC *ipc, int port, int maxConnections) :
 		ipc(ipc)
 {
 	ipc->registerSlimServer(this);
-	printf("slimProto: port %i, data port %i\n", port, ipc->getShoutPort() );
+	db_printf(1,"slimProto: port %i, data port %i\n", port, ipc->getShoutPort() );
 }
 
 
@@ -251,7 +252,7 @@ void slimConnectionHandler::setVisualization(uint8_t mode)
 	data[0] = vparam[0];	//'which' a.k.a visu::vis_e
 	data[1] = nrParam - 1;	//'which' doesn't count as parameter
 
-	db_printf(30, "setVisualization(): mode %i, %i parameters\n", data[0], data[1] );
+	db_printf(2, "setVisualization(): mode %i, %i parameters\n", data[0], data[1] );
 
 	// The rest are words:
 	for(int i=1; i < nrParam; i++)
@@ -339,10 +340,23 @@ const char* slimConnectionHandler::uuid(void)
 	return state->uuid;
 }
 
-char * slimConnectionHandler::volume(void)
+int slimConnectionHandler::volume(void)
 {
-	return &(state->volume);
+	return state->volume;
 }
+
+int slimConnectionHandler::elapsed(void)
+{
+	return status.songMSec;
+}
+
+
+bool slimConnectionHandler::isPlaying(void)
+{
+	return state->playState == state_s::PL_PLAY;
+}
+
+
 
 enum slimConnectionHandler::anim_e* slimConnectionHandler::anim(void)
 {
@@ -632,7 +646,7 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 			case cmd_playing:
 				if( state->currentScreen != menu->nowPlayingScreen)
 				{
-					db_printf(1,"current = %p, nowPlating = %p\n", state->currentScreen , menu->nowPlayingScreen );
+					db_printf(1,"current = %p, nowPlaying = %p\n", state->currentScreen , menu->nowPlayingScreen );
 					state->currentScreen = menu->nowPlayingScreen;
 				}
 				else
@@ -668,15 +682,17 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 			case cmd_forward:
 				this->ipc->seekList( state->currentGroup,  1, SEEK_CUR);
 				break;
+			case cmd_repeat:
+				ipc->setRepeat(state->currentGroup,  !ipc->getRepeat( state->currentGroup ) );
+				break;
 
-
-				//others:
+				// Others:
 			case cmd_brightness:
 				state->brightness = ( (state->brightness|1) + 2) % 6;
 				setBrightness(state->brightness - 1);	//minus one to allow display to be fully off
 				break;
 			case cmd_0:
-				//test if the display works:
+				// Test if the display works:
 				sprintf(str,"0 key %u = %s\n", code, commandsStr[cmd] );
 				menu->display->gotoxy(0,0);
 				menu->display->rect( win , 0);
@@ -709,7 +725,7 @@ void slimConnectionHandler::ir(netBuffer& buf, int len)
 
 void slimConnectionHandler::stat(netBuffer& buf, int len)
 {
-
+	const int dbg_level = 3;
 	buf.read( &status.eventCode,4);	//disable byte-order conversion
 	status.nrCrLF		= buf;
 	status.masInit		= buf; //'m' or 'p'
@@ -731,39 +747,41 @@ void slimConnectionHandler::stat(netBuffer& buf, int len)
 
 	if( status.eventCode == slimOpCode('S','T','M','h') )
 	{
-		db_printf(2,"<\tHeader has been parsed\n");
+		db_printf(dbg_level,"<\tHeader has been parsed\n");
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','s') )
 	{
-		db_printf(2,"<\tplayback has started\n");
+		db_printf(dbg_level,"<\tplayback has started\n");
 		state->currentSong = ipc->getSong( state->currentGroup );
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','t') )
 	{
-		db_printf(2,"<\theartbeat: pos = %.1f sec\n", (status.songMSec+500) / 1e3 );
+		db_printf(dbg_level,"<\theartbeat: pos = %.1f sec\n", (status.songMSec+500) / 1e3 );
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','c') )
 	{
-		db_printf(2,"<\tConnect???\n");
+		db_printf(dbg_level,"<\tConnect???\n");
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','d') )
 	{
-		db_printf(2,"<\tplayer is ready for the next track\n");
+		db_printf(dbg_level,"<\tplayer is ready for the next track\n");
 		ipc->seekList( state->currentGroup, 1, SEEK_CUR, false);	//start a new song, but don't stop the current one yet
 	}
 	else if( status.eventCode == slimOpCode('S','T','M','u') )
 	{
-		db_printf(2,"<\tdata underrun\n");
+		db_printf(dbg_level,"<\tdata underrun\n");
 		ipc->seekList( state->currentGroup, 1, SEEK_CUR, true);	//abort current stream, start something new.
 	} else {
-		char event[5] = {0,0,0,0,0};
-		*((uint32_t*)event) = status.eventCode;
-		db_printf(2,"<Stat(%i): %s. song %u ms, %lli recv\n", len, event, status.songMSec, (long long)status.nrRecv);
-		db_printf(2,"<\tbufSize %u, bufOut %u/%u, #crlf %i\n", status.bufSize, status.bufDataOut, status.bufSizeOut, status.nrCrLF);
+		uint32_t eventStr[2] = {status.eventCode,0};	//make sure it's zero-terminated.
+		db_printf(dbg_level,"<Stat(%i): %s. song %u ms, %lli recv\n", len, (char*)eventStr, status.songMSec, (long long)status.nrRecv);
+		db_printf(dbg_level+1,"<\tbufSize %u, bufOut %u/%u, #crlf %i\n", status.bufSize, status.bufDataOut, status.bufSizeOut, status.nrCrLF);
 	}
 
-	//update the display:
+	// Update the display:
 	state->currentScreen->draw();
+
+	// Send notification of the update:
+	ipc->notifyClientUpdate(this);
 }
 
 
@@ -782,7 +800,7 @@ int slimConnectionHandler::send(const char cmd[4], uint16_t len, void *data)
 	buf.write( (uint16_t)(4 + len) );	//write length of cmd+data
 	buf.write(cmd,4);
 
-	db_printf(3,"sending %c%c%c%c: %i bytes\n", cmd[0], cmd[1], cmd[2], cmd[3], len);
+	db_printf(4,"sending %c%c%c%c: %i bytes\n", cmd[0], cmd[1], cmd[2], cmd[3], len);
 
 	write( new nbuffer::bufferMem(hdr,    6, true) );
 	write( new nbuffer::bufferMem(data, len, true) );
@@ -844,6 +862,11 @@ void slimConnectionHandler::setVolume(uint8_t newVol)
 	buf.write( (uint32_t) newGain );	//right, new format
 	assert( buf.idx == sizeof(data) );
 	send("audg", sizeof(data), data);
+
+	//update state, couldn't remember in which message the player
+	// sends it's current volume
+	state->volume = (int)localVol;
+    ipc->notifyClientUpdate( this );    //and update the state.
 }
 
 
@@ -962,9 +985,14 @@ void slimConnectionHandler::play()
 
 void slimConnectionHandler::pause()
 {
-	stream.command    = 'p';
-	STRM();
-	state->playState = state_s::PL_PAUSE;
+	//Do not pause twice, since that will reset the stream after
+	//the hw-buffer of the squeezebox has been emptied.
+	//if( state->playState != state_s::PL_PAUSE )
+	{
+		stream.command    = 'p';
+		STRM();
+		state->playState = state_s::PL_PAUSE;
+	}
 }
 
 

@@ -1,0 +1,28 @@
+<html>
+<head>
+	<title>Index of #BASE#</title>
+
+	<script type="text/javascript" language="JavaScript">
+		function call(relurl)
+		{
+			var url = "/dynamic/" + relurl;
+			req = new XMLHttpRequest();
+			req.open("GET", url, true);
+			//alert(url);
+			req.send("");
+			parent.player.location.reload();
+			parent.playlist.location.reload();
+		}
+	</script>
+</head>
+
+<body>
+<H2>Index of #BASE#</H2><pre>
+
+<a href="#BASE#/.."><- Up</a>
+
+#FILELIST#
+
+</pre><br><hr>
+</body>
+</html>

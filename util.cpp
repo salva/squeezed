@@ -5,6 +5,8 @@
 
 #include <string.h>
 #include <stdint.h>
+//#include <ctype.h> //for tolower()
+#include <cctype>
 
 #if defined(WIN32) && !defined(__CYGWIN__)
 	#define S_ISDIR(a) (((a) & _S_IFDIR)!=0)
@@ -17,6 +19,71 @@
 #include "debug.h"
 #include "util.hpp"
 #include <dirent.h>	//for path::listdir()
+
+
+namespace util
+{
+	const fletcher_state_t fletcher_init = {0xFF, 0xFF, 0};
+
+
+	/// Update Fletcher state with new data:
+	/// TODO: properly take into account that if len%21 != 0, multiple calls
+	/// to fletcher_update do not give the same result as a single call.
+	size_t fletcher_update(const uint8_t *data, size_t len, fletcher_state_t *state)
+	{
+		uint16_t sum1 = state->sum1;
+		uint16_t sum2 = state->sum2;
+		uint8_t modlen=0;
+		while (len) {
+                size_t tlen = len > 21 ? 21 : len;
+                modlen = 21-len;	//remaining length to store
+                len -= tlen;
+                do {
+                        sum1 += *data++;
+                        sum2 += sum1;
+                } while (--tlen);
+                sum1 = (sum1 & 0xff) + (sum1 >> 8);
+                sum2 = (sum2 & 0xff) + (sum2 >> 8);
+        }
+        state->sum1 = sum1;
+        state->sum2 = sum2;
+        state->modlen = modlen;
+        return len;
+	}
+
+
+
+	/// update fletcher state with a single byte.
+	/// (hopefully this function is inlined)
+	void fletcher_update_single(uint8_t data, fletcher_state_t& state)
+	{
+		state.sum1 += data;
+		state.sum2 += state.sum2;
+		state.modlen++;
+		if( state.modlen > 21)
+		{
+			state.modlen = 0;
+			state.sum1 = (state.sum1 & 0xff) + (state.sum1 >> 8);
+			state.sum2 = (state.sum2 & 0xff) + (state.sum2 >> 8);
+		}
+	}
+
+
+
+	/// Generate a hash code from the current state
+	uint16_t fletcher_finish(fletcher_state_t state)
+	{
+		uint16_t checksum;
+		uint16_t sum1 = state.sum1;
+		uint16_t sum2 = state.sum2;
+		sum1 = (sum1 & 0xff) + (sum1 >> 8);
+        sum2 = (sum2 & 0xff) + (sum2 >> 8);
+        checksum  = (sum1 & 0xFF) << 8;
+        checksum |= (sum2 & 0xFF);
+        return checksum;
+	}
+
+} //namespace util
 
 
 namespace pstring
@@ -51,7 +118,24 @@ namespace pstring
 		ret.push_back( str.substr(start) );
 		return ret;
 	}
-}
+
+
+	/// Convert a string to lower case
+	void tolower(std::string& str)
+	{
+		for(size_t i=0; i < str.size(); i++)
+			str[i] = std::tolower( (char)str[i] );
+	}
+
+    bool startswith(std::string& str, std::string& pattern)
+    {
+        //bool ret = false;
+        if( str.size() < pattern.size() )
+            return false;
+        return memcmp( str.data(), pattern.data(), pattern.size() ) == 0;
+    }
+
+} //namespace string
 
 
 namespace os
@@ -123,7 +207,7 @@ namespace path
 	std::string normalize(std::string fname)
 	{
 		db_printf(30,"normalize()\n");
-	
+
 		//std::string out;
 		/*size_t n = fname.size();
 		for(size_t i=0; i< fname.size()-1; i++)
@@ -178,7 +262,7 @@ namespace path
 		if( res == NULL)
 			return "";
 		std::string out(tmp);
-#else		
+#else
         //use a glibc-specific implementation, which does not have the memory allocation
         //	problems of the standard version
 		db_printf(30,"calling realpath() on '%s'\n", fname.c_str());
@@ -195,7 +279,7 @@ namespace path
 		db_printf(30,"normalize(): converting back to string\n");
 		std::string out( tmp );
 		free(tmp);	//it's malloced, don't use delete
-#endif	
+#endif
 		return out;
 	}
 
@@ -261,7 +345,7 @@ namespace path
 
 
 	/// sorting criterium for filenames. TODO: directories first
-	static bool fnameLessThan( std::string a,  std::string b) 
+	static bool fnameLessThan( std::string a,  std::string b)
 	{
 		std::transform(a.begin(), a.end(), a.begin(), toupper);
 		std::transform(b.begin(), b.end(), b.begin(), toupper);
@@ -311,8 +395,37 @@ namespace path
 		return out;
 	}
 
-
 } //namespace path
+
+
+
+namespace file
+{
+	char* readfile(const char *fname,  size_t *size, const char *mode)
+	{
+		char *out=NULL;
+		FILE *handle = fopen( fname, mode);
+		if(handle==NULL)
+			return out;
+
+		size_t n;
+
+		n = fseek( handle, 0, SEEK_END);
+		*size = ftell(handle);
+		n = fseek( handle, 0, SEEK_SET);
+
+		out = (char*)malloc( *size + 1 );	//zero-terminate it.
+		n=0;
+		if( out != NULL )
+			n = fread( out, 1, *size, handle);	//swap 1 and *size to be faster, but that doesn't work in ascii mode
+		*size = n;
+		out[*size] = 0;	//zero-terminate it. malloc() has reserved space for this
+
+		fclose( handle );
+		return out;
+	}
+
+} //namespace file
 
 
 namespace nbuffer
@@ -362,6 +475,7 @@ namespace nbuffer
 
 		if( handle != NULL)
 		{
+			//TODO: verify _pos and ftell(handle), since seek() is not inherited correctly
 			n = fread(dst, nrCopy, 1, handle);
 			if( n != 1) {
 				db_printf(1,"bufferFile(): error reading %s: %llu\n", fname.c_str(), (LLU)n );
@@ -370,6 +484,15 @@ namespace nbuffer
 		}
 
 		return n;
+	}
+
+
+	char bufferFile::eof(void)
+	{
+		if (handle==NULL)
+			return true;
+		else
+			return (feof(handle)!=0)||(_pos>=_size);
 	}
 
 	int bufferFile::close(void)

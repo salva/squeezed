@@ -44,6 +44,10 @@
 		<Unit filename="../debug.h" />
 		<Unit filename="../fileInfo.cpp" />
 		<Unit filename="../fileInfo.hpp" />
+		<Unit filename="../htmlIPC.hpp" />
+		<Unit filename="../htmlTemplate.hpp" />
+		<Unit filename="../httpclient.cpp" />
+		<Unit filename="../httpclient.hpp" />
 		<Unit filename="../main.cpp" />
 		<Unit filename="../musicDB.cpp" />
 		<Unit filename="../musicDB.hpp" />
@@ -55,6 +59,8 @@
 		<Unit filename="../slimIPC.hpp" />
 		<Unit filename="../slimProto.cpp" />
 		<Unit filename="../slimProto.hpp" />
+		<Unit filename="../socket.cpp" />
+		<Unit filename="../socket.hpp" />
 		<Unit filename="../util.cpp" />
 		<Unit filename="../util.hpp" />
 		<Extensions>

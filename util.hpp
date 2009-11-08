@@ -11,6 +11,7 @@
 
 #include <sys/stat.h>
 
+#include <stdint.h>	//for uint8_t
 
 
 //platform dependend stuff:
@@ -29,7 +30,7 @@ typedef unsigned long long LLU;
 
 
 /// Very basic shared_prt
-template <class T> 
+template <class T>
 class shared_ptr
 {
 private:
@@ -118,9 +119,34 @@ namespace util
 		return x > max ? max: x;
 	}
 
+	// Checksum functions:
+
+	/// Initial value for the state of the fletcher checksum:
+	typedef struct {
+		uint16_t sum1;
+		uint16_t sum2;
+		uint8_t  modlen;	//modulus of the length, to allow multiple calls to
+		//fletcher-update.
+	} fletcher_state_t;
+	const extern fletcher_state_t fletcher_init;
+
+
+	/// Update Fletcher state with new data:
+	/// TODO: properly take into account that if len%21 != 0, multiple calls
+	/// to fletcher_update do not give the same result as a single call.
+	size_t fletcher_update(const uint8_t *data, size_t len, fletcher_state_t *state);
+
+	/// update fletcher state with a single byte.
+	/// (hopefully this function is inlined)
+	void fletcher_update_single(uint8_t data, fletcher_state_t& state);
+
+	/// Generate a hash code from the current state
+	uint16_t fletcher_finish(fletcher_state_t state);
+
+
 	/// helper function for sort()
 	/*template <class T>
-	static bool lessThan( T a, T b) 
+	static bool lessThan( T a, T b)
 	{
 		return a < b;
 	}
@@ -149,6 +175,11 @@ namespace pstring
 
 	/// Split string, given a delimiter.
 	std::vector<std::string> split(const std::string& str, char delimiter = ' ');
+
+	/// Convert a string to lower case
+	void tolower(std::string& str);
+
+    bool startswith(std::string& str, std::string& pattern);
 }
 
 
@@ -184,6 +215,78 @@ namespace path {
 } //namespace path
 
 
+namespace file {
+//	const int SEEK_SET = 0;
+//	const int SEEK_CUR = 1;
+//	const int SEEK_END = 2;
+
+	/// Read a whole file to memory.
+	/// Note: return value must be free()-ed by the user
+	char* readfile(const char *fname,  size_t *size, const char *mode="rb");
+
+
+	/*
+	/// Python-like file I/O
+	class file {
+		private:
+			FILE *handle;
+			size_t size;
+		public:
+			file():
+			  handle(NULL),
+			  size(0)
+			{}
+
+			~file()
+			{
+				close();
+			}
+
+			void open(const std::string& fname, const std::string& mode="r")
+			{
+				handle = fopen( fname.c_str(), mode.c_str() );
+			}
+
+			void close(void)
+			{
+				fclose(handle);
+			}
+
+			std::vector<char> read(int max=-1)
+			{
+				std::vector<char> out;
+				if( max < 0 )
+				{
+					size_t pos = ftell(handle);
+					fseek( handle, 0, SEEK_END);
+					max = ftell(handle);
+					fseek( handle, pos, SEEK_SET);
+				}
+				out.resize( max );
+				fread( &(max[0]), max, 1, handle);
+				return out;
+			}
+
+			int write(const std::vector<char>& data)
+			{
+				fwrite( &(data[0]), data.size(), 1, handle);
+			}
+
+			int seek(size_t offset, int whence=SEEK_SET)
+			{
+				return fseek(handle,offset,whence);
+			}
+
+			int tell(void)
+			{
+				return ftell(handle);
+			}
+	}; //class file
+	*/
+} //namespace file
+
+
+
 namespace nbuffer {
 
 	/// Generic buffer, derived classes read from memory, file or network.
@@ -198,19 +301,25 @@ namespace nbuffer {
 		{ }
 
 		/// Indicate end-of-stream
-		char eof(void);
+		virtual char eof(void);
 		/// Number of bytes
-		size_t size(void);
+		virtual size_t size(void);
 		/// current position
 		size_t pos(void);
 		size_t seek(int offset) { _pos += offset; return _pos; }
-		
+
 		/// returns pointer to start of data, if possible, otherwise returns NULL
 		virtual const char* ptr(void)	{return NULL; }
-		
+
 		/// read data into *dst, returns number of bytes read
 		virtual int read(void *dst, size_t len)=0;
-		
+
+        /// Returns true if read() will not block.
+        virtual bool canRead(void)
+        {
+            return true;
+        }
+
 		/// close all handles
 		virtual int close(void)=0;
 	};
@@ -226,6 +335,7 @@ namespace nbuffer {
 		bufferFile(const char *fname);
 		~bufferFile();
 		int read(void *dst, size_t len);
+		char eof(void);
 		int close(void);
 	};
 
@@ -243,7 +353,7 @@ namespace nbuffer {
 	};
 
 
-	/// buffer from a memory location
+	/// Buffer from a memory location
 	class bufferMem :  public buffer
 	{
 	private:

@@ -1,5 +1,7 @@
 
 
+#include "httpclient.hpp"		//also includes winsock.h...
+
 #include "serverShoutCast.hpp"	//needs to be first, to include winsock.h before windows.h
 
 #include "slimIPC.hpp"
@@ -7,9 +9,13 @@
 #include "configParser.hpp"
 
 
+// Dynamic content for web-based user-interface:
+#include "htmlIPC.hpp"
 
 
-TCPserverShout::TCPserverShout(slimIPC *ipc, int port, int maxConnections) :
+
+
+TCPserverShout::TCPserverShout(slimIPC *ipc, int port, int maxConnections):
 		TCPserver( port, maxConnections ),
 		ipc(ipc)
 {
@@ -83,7 +89,43 @@ std::string htmlFileList(
 
 
 
+//Extract path from HTML request
+string htmlRequestExtractPath(const char* htmlpath,		//relative path, with html-encoding
+							  const char *vfsBase,		//base of HTML path, will be stripped off
+							  const char *absBasePath	//absolute start of the path on disk
+							  )
+{
+	string fullPath;
+	//Strip the base of off
+	const char *relPath = strstr(htmlpath, vfsBase);
+/*	const char *end=NULL;	//needed later on, for debug
+	if(relPath != NULL)
+	{
+		relPath += strlen(vfsBase);
+		end = strchr(relPath,' ');
+		if( end != NULL )
+		{
+			fullPath = path::join( realPath, string(relPath, end-relPath) );
+		} else
+			end = relPath;	//needed later on, for debug
+	}
+	std::string relStr(relPath, end-relPath);*/
+	if( relPath == NULL)
+		return fullPath;
+	relPath += strlen(vfsBase);
 
+	string relStr = path::unescape(relPath);
+
+	// Unescape the html-escapes.
+	fullPath = path::unescape( path::join(absBasePath,relStr) );
+
+	// Convert to windows style, and prevent "../../" exploits
+	fullPath = path::normalize(fullPath);
+	return fullPath;
+}
+
+
+/*
 //Translate relative path to realpath. Get contents or dir-listing
 class nbuffer::buffer *shoutConnectionHandler::handleVFS(const char* request, const char *vfsBase, const char *realPath)
 {
@@ -113,6 +155,8 @@ class nbuffer::buffer *shoutConnectionHandler::handleVFS(const char* request, co
 	// Convert to windows style, and prevent "../../" exploits
 	fullPath = path::normalize(fullPath);
 
+	//std::string fullPath = htmlRequestExtractPath(htmlpath, vfsBase, realPath);
+
 	db_printf(2,"fullPath = '%s'\n", fullPath.c_str());
 
 	//check if it's a file or directory:
@@ -135,7 +179,7 @@ class nbuffer::buffer *shoutConnectionHandler::handleVFS(const char* request, co
 		for(size_t i=0; i<files.size(); i++)
 		{
 			std::string mime,fullName =  path::join(fullPath, files[i]);
-			if( path::isdir(  fullName ) ) 
+			if( path::isdir(  fullName ) )
 			{
 				files[i].push_back('/');				//append trailing slash to directories:
 				mime = "directory";
@@ -163,27 +207,163 @@ class nbuffer::buffer *shoutConnectionHandler::handleVFS(const char* request, co
 
 	return outBuf;
 } //handleVFS
+*/
 
 
-
-/// Parse url parameters in the form http://127.0.0.1/stream?player=str?something=else
-std::map<std::string,std::string> parseUrlParams(std::string paramStr, std::string *fname=NULL)
+/* Class to keep an network connection open until an event has passed */
+class bufferNotify: public nbuffer::buffer
 {
-	std::map<std::string,std::string> ret;
-	std::vector<std::string> pairs = pstring::split(paramStr, '?');
+public:
+	bool canClose;
+	string data;
 
-	//first pair is the filename, so skip that:
-	if(fname != NULL)
-		*fname = pairs[0];
-	for(size_t i=1; i< pairs.size(); i++)
+private:
+
+	class callback: public slimIPC::callbackFcn
 	{
-		std::vector<std::string> keyVal = pstring::split( pairs[i] , '=' );
-		if( keyVal.size() == 2 )
-			ret[ keyVal[0] ] = keyVal[1];
+	private:
+		slimIPC *ipc;
+		string clientName;
+		bufferNotify *parent;
+        string templateFname;
+    public:
+		callback(slimIPC *ipc, string clientName, bufferNotify *parent, string templateFname):
+				ipc(ipc),
+				clientName(clientName),
+				parent(parent),
+                templateFname(templateFname)
+		{ }
+
+		~callback()
+		{
+		}
+
+        void writeHeader(string &data, const char *httpCode, string *mimeType=NULL)
+        {
+            stringstream html;
+            html << "HTTP/1.0 " << httpCode << "\r\n";
+            if( mimeType != NULL)
+                html << "Content-Type: " << mimeType << "\r\n";
+            html << "Connection: close\r\n\r\n";
+            data = html.str();
+        }
+
+
+		bool call(void)
+		{
+			// One call is enough:
+			//ipc->unregisterCallback(this);
+
+			//const char *fields[] = {"volume","elapsed","playstate"};
+			string groupName = ipc->getGroup(clientName);
+			musicFile song = ipc->getSong(groupName);
+			//const playList* list = ipc->getList(clientName);
+
+            //Check if we can get device info:
+            if( ipc->getDevice( clientName, "volume" ).size() > 0)
+            {
+                size_t fsize;
+                char *templateData = file::readfile( templateFname.c_str(), &fsize);
+
+                if( templateData != NULL )
+                {
+                    //TODO: adjust mimetype base on file to serve.
+                    writeHeader(parent->data, "200 OK" );
+
+                    // Fill string with status update
+		            keywordMatcherIPC keywordMatcher(ipc, clientName,  NULL, NULL, NULL, NULL);
+                    dHtmlTemplate parser( &keywordMatcher );
+				    string parsedData = parser.generateData( templateData );
+                    free( templateData );
+                    parent->data.append( parsedData);
+                } else {
+                    writeHeader(parent->data, "404 NOT FOUND" );
+                    parent->data.append("URL '" + templateFname + "' could not be found\r\n");
+                }
+
+            } else {
+                writeHeader(parent->data, "404 NOT FOUND" );
+                parent->data.append("Device '" + clientName + "' is not known\r\n");
+            }
+
+            // Mark that it's ready to sent and close the connection:
+			parent->canClose = true;
+			return false;       //don't want another callback
+		}
+	};
+
+	callback *callbackFcn;
+	slimIPC *ipc;
+public:
+
+	bufferNotify(slimIPC *ipc, string clientName, string templateFname, bool doWait=true):
+			ipc(ipc)
+	{
+		_size = 0;
+		_pos  = 0;
+		canClose = false;
+		callbackFcn = new callback(ipc, clientName, this, templateFname);
+
+		if( doWait )
+		{
+			// Register callback with ipc, to set
+			// data on update.
+			ipc->registerCallback(callbackFcn,clientName);
+		} else {
+			// Set data immediately
+			callbackFcn->call();
+		}
 	}
 
-	return ret;	//return a copy....
-}
+	~bufferNotify()
+	{
+		ipc->unregisterCallback(callbackFcn);
+		delete callbackFcn;
+	}
+
+
+	//nbuffer interface:
+	char eof(void)
+	{
+		return canClose && (_pos >= _size);
+	}
+
+	size_t size(void)
+	{
+		return canClose ? data.size() : NULL;
+	}
+
+	//don't return any pointer until we are ready to send:
+	const char* ptr(void)
+	{
+		return canClose ? data.c_str(): NULL;
+	}
+
+	int read(void *dst, size_t len)
+	{
+        if( !canClose) return 0;
+		size_t nrCopy = util::min<int32_t>(len, _size - _pos );
+		memcpy(dst, data.c_str() + _pos, nrCopy);
+		_pos += nrCopy;
+		return nrCopy;
+	}
+
+
+    /// Return true of read() will not be blocking.
+    bool canRead(void)
+    {
+        return canClose;
+    }
+
+	int close(void)
+	{	//send out the data. (which will not work anymore, because this thing
+		//is closed for a reason, but still...)
+		//callbackFcn->call();
+		return 0;
+	}
+
+};
+
 
 
 /// Parse request, returns a buffer with the response, or NULL if there is no response
@@ -197,27 +377,58 @@ nbuffer::buffer* shoutConnectionHandler::handleGet(const char* request)
 
 	//Definition of the root file system:
 	const char *dynamicEntries[] = {
-		"GET / ",			//root index, will point to /html/index.html
-		"GET /data/",		//browse files in music databse
-		"GET /dynamic/",	//link to virtual .csv files with current statistics
-		"GET /html/",		//static html data
-		"GET /stream.mp3",	//current stream
+		"/ ",			//root index, will point to /html/index.html
+		"/data/",		//browse files in music databse
+		"/dynamic/",	//link to virtual .csv files with current statistics
+		"/html/",		//static html data
+		"/stream.mp3",	//current stream
 	};
 
 	enum dynName{ ROOT, DATA, DYNAMIC, HTML, STREAM, OTHER };	//names for dynamicEntries[]
 	size_t dynIdx;
 
+	//First line: "GET %path% http/?.?"
+	const char *method  = request;
+	const char *path    = (method==NULL)? NULL : strchr(method,' ');
+
 	//Get root index:
 	for(dynIdx=0; dynIdx < array_size(dynamicEntries); dynIdx++)
 	{
-		if( strncasecmp(request, dynamicEntries[dynIdx], strlen(dynamicEntries[dynIdx]) ) == 0 )
+		//if pathStr has a trailing space:
+		//if( strncasecmp(pathStr.c_str(), dynamicEntries[dynIdx], strlen(dynamicEntries[dynIdx]) ) == 0 )
+		//if pathStr is properly splitted:
+		//if( strncasecmp(pathStr.c_str(), dynamicEntries[dynIdx], pathStr.size() ) == 0 )
+		//with trailing space, to separate "/" from the rest:
+		if( strncasecmp( path+1, dynamicEntries[dynIdx], strlen(dynamicEntries[dynIdx]) ) == 0 )
 			break;
 	}
 
-	db_printf(1,"SHOUT: handleGet(%llu), root dir %llu\n", (LLU)strlen(request), (LLU)dynIdx );
+
+	// Parse the header:
+	http::parseRequestHeader hdr(request);
+	//map<string,string> *params = &(hdr.headerParam);
+
+	// Get current device:
+	string currentDeviceName = path::unescape( hdr.getCookie("device") );
+	if( currentDeviceName.size() == 0)
+	{
+		vector<string> devices = ipc->listDevices();
+		if (devices.size() > 0)
+			currentDeviceName = devices[0];
+		//TODO: set "set-cookie:" field in the response header.
+		// HTTP/1.1 200 OK
+		// Set-Cookie: device=all
+		// Add a form in header.html to select the devices??
+	}
+
+	// Filename without parameters:
+	string fname = pstring::split(hdr.path,'?')[0];
+
+	db_printf(3,"SHOUT: handleGet(%llu), root dir %llu (%s), device %s\n",
+		(LLU)strlen(request), (LLU)dynIdx, hdr.path.c_str(), currentDeviceName.c_str() );
 	switch(dynIdx)
 	{
-		case ROOT:		// virtual root directory
+		case ROOT:		// Virtual root directory
 			{
 				using namespace std;
 				vector< map<string, string> > dirList;
@@ -234,16 +445,12 @@ nbuffer::buffer* shoutConnectionHandler::handleGet(const char* request)
 				sendHeader("text/html");
 			}
 			break;
-		case STREAM:	// stream data
+		case STREAM:	// Stream data
 			{
-				db_printf(1,">SHOUT: sending music stream\n");
+				db_printf(2,">SHOUT: sending music stream\n");
 
-				//get device id:
-				string paramStr = pstring::split( request, ' ')[1];
-				std::map<std::string,std::string> params = parseUrlParams(paramStr);
-
-				// get song to be played
-				const playList *list = ipc->getList( params["player"] );
+				// Get song to be played
+				const playList *list = ipc->getList( hdr.getUrlParam("player") );
 				if( list != NULL)
 				{
 					vector<musicFile>::const_iterator it = list->begin() + list->currentItem;
@@ -257,43 +464,130 @@ nbuffer::buffer* shoutConnectionHandler::handleGet(const char* request)
 			break;
 		case DATA:		// music database
 			{
-				response = handleVFS(request, dynamicEntries[DATA], dataPath.c_str() );
+				//response = handleVFS(request, dynamicEntries[DATA], dataPath.c_str() );
+				// only parse directories, not files:
+				string templateDir     = path::join( htmlPath, "dirlist.html" );
+				string templateDirItem = path::join( htmlPath, "dirlistItem.html" );
+				size_t sizeDir, sizeDirItem;
+				char *dataDir     = file::readfile( templateDir.c_str(), &sizeDir );
+				char *dataDirItem = file::readfile( templateDirItem.c_str(), &sizeDirItem );
+				const char *emptyStr    = "";
+
+
+				keywordMatcherIPC keywordMatcher(ipc, currentDeviceName,
+											     dataPath.c_str(), dynamicEntries[DATA],	//disk and http path
+												 emptyStr, emptyStr);	//song,playlist info
+
+				dHtmlVFS vfs( &keywordMatcher,
+							   hdr.path, dataPath,	//The VFS-path and disk-path
+							   dataDir, dataDirItem);			//the template files
+				string absPath = htmlRequestExtractPath( hdr.path.c_str(), dynamicEntries[dynIdx], dataPath.c_str() );
+				response = vfs.generateData( absPath );
+
 			}
 			break;
 		case HTML:		// html data, for user interface
 			{
-				response = handleVFS(request, dynamicEntries[HTML], htmlPath.c_str() );
+				//response = handleVFS(request, dynamicEntries[HTML], htmlPath.c_str() );
+
+				// Test the more generic system:
+				string templateDir     = path::join( htmlPath, "dirlist.html" );
+				string templateDirItem = path::join( htmlPath, "dirlistItem.html" );
+				string templatePLitem  = path::join( htmlPath, "playlistItem.html" );
+				string templateDevice  = path::join( htmlPath, "deviceListItem.html" );
+				size_t sizeDir, sizeDirItem, sizePLitem, sizeDevItem;
+				char *dataDir     = file::readfile( templateDir.c_str(), &sizeDir );
+				char *dataDirItem = file::readfile( templateDirItem.c_str(), &sizeDirItem );
+				char *dataPLitem  = file::readfile( templatePLitem.c_str(), &sizePLitem );
+				char *dataDevice  = file::readfile( templateDevice.c_str(), &sizeDevItem );
+
+				// TODO: combine all keyword matchers:
+				//		htmlTemplateGroup matcher;
+				//		matcher.add( htmlTemplateIPC(ipc) );
+				//		matcher.add( htmlTemplateLasFM(lastfm) );
+				keywordMatcherIPC keywordMatcher(ipc, currentDeviceName,
+											     dataPath.c_str(), dynamicEntries[DATA],	//disk and http path
+												 dataPLitem, dataDevice  					//playlist and dirlist templates
+												);	//song,playlist info
+
+				dHtmlVFS vfs( &keywordMatcher,
+							   hdr.path, htmlPath,	//The VFS-path and disk-path
+							   dataDir, dataDirItem);			//the template files
+				string absPath = htmlRequestExtractPath( hdr.path.c_str(), dynamicEntries[HTML], htmlPath.c_str() );
+				response = vfs.generateData( absPath );
+
+				free(dataDir);
+				free(dataDirItem);
+				free(dataPLitem);
+				free(dataDevice);
 			}
 			break;
 		case DYNAMIC:	// dynamic content, playlists, queries, statistics
 			{
-				//parse request, break it down into a command name and it's parameters
-				//TODO: determine group name
 				//TODO: match SqueezeCenter: squeezecenter-7.3.2/HTML/EN/html/docs/http.html
-				std::string fname;
-				string paramStr = pstring::split( request, ' ')[1];
-				std::map<std::string,std::string> params = parseUrlParams(paramStr, &fname);
+				string cmd = fname.substr( strlen(dynamicEntries[dynIdx]) );
+				string relUrl = path::unescape( hdr.getUrlParam("url") );
+				string idx    = hdr.getUrlParam("idx");
 
-				std::string relUrl = path::unescape( params["url"] );
-				db_printf(1,"dynamic content for: %s, url = %s\n", fname.c_str(), relUrl.c_str() );
+				//db_printf(1,"dynamic content for: %s, urlPath = %s\n", fname.c_str(), hdr.path.c_str() );
 
-				if( fname.find("add") < fname.size() )
+				string groupName = ipc->getGroup( currentDeviceName );
+				string diskUrl = htmlRequestExtractPath( relUrl.c_str(), dynamicEntries[DATA], dataPath.c_str() );
+
+				if( cmd == "add" )
 				{
-					std::string url = path::join( dataPath, relUrl );
-					std::vector<musicFile> entries = makeEntries(url);
-					ipc->addToGroup( "all", entries);
-				} else if( fname.find("play") < fname.size() )
+					std::vector<musicFile> entries = makeEntries(diskUrl);
+					ipc->addToGroup( groupName, entries);
+				}
+				else if( cmd == "play" )
 				{
-					std::string url = path::join( dataPath, relUrl );
-					std::vector<musicFile> entries = makeEntries(url);
-					if( entries.size() > 0 )
-					{
-						ipc->setGroup( "all", entries);
-						ipc->seekList( "all", 0, SEEK_SET);
+					if( idx.size() > 0 )
+					{	//seek in current playlist
+						ipc->seekList( groupName, atoi(idx.c_str()), SEEK_SET);
+					}
+					else
+					{	//replace playlist, then start playing
+						// replace the VFSbase with the absolute disk base path:
+
+						std::vector<musicFile> entries = makeEntries(diskUrl);
+						if( entries.size() > 0 )
+						{
+							ipc->setGroup( groupName, entries);
+							ipc->seekList( groupName, 0, SEEK_SET);
+						}
 					}
 				}
+				else if( cmd == "remove" )
+				{
+					//int i = atoi( idx.c_str() );
+					//ipc->
+				}
+				else if( cmd == "control" )
+                {
+                    string subCmd  = hdr.getUrlParam("action");
+					string subValue= hdr.getUrlParam("value");
+                    ipc->setDevice( currentDeviceName, subCmd, subValue );
+                }
+				else if( cmd == "notify" )
+				{
+                    // Server this file upon return:
+                    string respFile     = path::join( htmlPath, hdr.getUrlParam("url") );
 
-			}
+                    // Keep the connection open until an update has occured:
+					response = new bufferNotify(ipc, currentDeviceName, respFile, true);
+                    // Don't accept any incoming data anymore.
+                    this->isReadBlocking = true;
+				}
+
+				//TODO: send redirect response, to force updating of the browser
+                //Need to find the origin of the call, is this in the http 'referrrer' header?
+				/*std::ostringstream html;
+				html << "HTTP/1.x 302 Moved Temporarily\r\n";
+				html << "Location: http://127.0.0.1:9000" << hdr.path << "\r\n";
+				html << "Connection: close\r\n\r\n";
+				response   = new nbuffer::bufferString( html.str() );
+				*/
+			} //case DYNAMIC
 			break;
 		default:
 			{

@@ -431,7 +431,14 @@ public:
 
 	const char* uuid(void);
 
-	char *volume(void);
+	/// Device volume 0..100
+	int volume(void);
+
+	/// Song position in milliseconds
+	int elapsed(void);
+
+	/// is currently playing ?
+	bool isPlaying(void);
 
 	anim_e *anim(void);
 
