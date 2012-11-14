@@ -1,4 +1,6 @@
-
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <stdio.h>
 
 #ifdef WIN32
 	#include <Winsock2.h>
@@ -152,14 +154,23 @@ int Socket::Recv(char *data, size_t len)
 
 void Socket::setBlocking(bool doBlock)
 {
+   int flags;
+   int r;
+	
+   flags = fcntl (_sock->s, F_GETFL);
+
 	if( doBlock )
 	{
 		u_long iMode = 0;	// blocking
-		int r = ioctlsocket(_sock->s, FIONBIO, &iMode);
+		//int r = ioctlsocket(_sock->s, FIONBIO, &iMode);
+		//int r = fcntl(_sock->s, F_SETFL, &iMode) ;
+      		r = fcntl (_sock->s, F_SETFL, flags & ~O_NONBLOCK);	
 	} else {
 		//set client to non-blocking mode: (is server is non-blocking, so will the clients be)
 		u_long iMode = 1;	// non-blocking
-		int r = ioctlsocket(_sock->s, FIONBIO, &iMode);
+		//int r = ioctlsocket(_sock->s, FIONBIO, &iMode);
+		//int r = fcntl(_sock->s, F_SETFL, &iMode) ;
+      		r = fcntl (_sock->s, F_SETFL, flags | O_NONBLOCK);	
 	}
 	//return r==0;	//return True if no error.
 }
