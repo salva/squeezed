@@ -30,7 +30,7 @@ BIN_OUT=squeezed
 STRIP=strip
 CXX=g++
 
-CXXFLAGS=-Os -g -I/usr/include/taglib $(CONFIG)
+CXXFLAGS=-Os -g -I/usr/include/taglib $(CONFIG) -D_DEBUG_
 #LDFLAGS+=
 LIBS=-lpthread -ltag
 OBJ_EXT=o
@@ -56,7 +56,7 @@ endif
 #   getlibs --ldconfig -p libtag1-vanilla
 ifeq ($(TARGET),32bit)
 	CXXFLAGS+=-m32 
-	#-I/usr/include/i486-linux-gnu/ 
+#	-I/usr/include/i486-linux-gnu/ 
 	LDFLAGS+=-m32 -L/usr/lib32
 	LIBS+=-lstdc++
 	HOST=linux-x86
@@ -87,7 +87,6 @@ $(OBJDIR)/%.o : %.c $(HDRS)
 
 $(OBJDIR)/%.o : %.cpp $(HDRS)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-	
 
 #------------------ Make targets ---------------------------------------------
 all: squeezed
@@ -117,22 +116,22 @@ openWRTtests: $(OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -luClibc++ -lz main_zlib.cpp -o $(BINDIR)/$(BIN_OUT)_zlib
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -luClibc++ -lz -ltag main_tag.cpp -o $(BINDIR)/$(BIN_OUT)_tag
 
-	#To check which dlls are imported, use:
-	#objdump -p build_dir/target-mipsel_uClibc-0.9.30.1/squeezed-0.1/bin/openWRT/squeezed_zlib | grep NEEDED
+#To check which dlls are imported, use:
+#objdump -p build_dir/target-mipsel_uClibc-0.9.30.1/squeezed-0.1/bin/openWRT/squeezed_zlib | grep NEEDED
 
 
 
 lzf: paths
 	(cd lzf; $(CXX) $(CXXFLAGS) -c -o ../$(OBJDIR)/lzf.o lzf_c.c)
-	#echo $(OBJS)
+#	echo $(OBJS)
 	OBJS=$(OBJS) lzf.o
-	#echo $(OBJS)
+#	echo $(OBJS)
 
 squeezed: paths $(OBJS)
 #	echo $(HDRS)
 #	ar rs $(BINDIR)/libSqueezed.lib $(OBJS)
-	$(CXX) $(LDFLAGS) $(LIBS) $(OBJS) -o $(BINDIR)/$(BIN_OUT)
-	$(STRIP) $(BINDIR)/$(BIN_OUT)
+	$(CXX) $(LDFLAGS) $(OBJS) $(LIBS) -o $(BINDIR)/$(BIN_OUT)
+#	$(STRIP) $(BINDIR)/$(BIN_OUT)
 
 clean:
 	-rm -r $(OBJDIR)/*.$(OBJ_EXT)
