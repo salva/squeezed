@@ -330,7 +330,7 @@ public:
 
 	size_t size(void)
 	{
-		return canClose ? data.size() : NULL;
+		return canClose ? data.size() : 0;
 	}
 
 	//don't return any pointer until we are ready to send:
